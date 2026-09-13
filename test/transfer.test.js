@@ -100,3 +100,20 @@ test('HTML disguised as an image is never served as an inline preview', async t 
   assert.equal((await call(url + '/preview')).status, 415);
   const response = await call(url + '/download'); assert.equal(response.headers.get('content-type'), 'application/octet-stream'); assert.match(response.headers.get('content-disposition'), /^attachment/);
 });
+test('HTTP passes source and chunk digests through to verified completion', async t => {
+  const { call } = await running(t); const bytes = Buffer.from('verified over HTTP'); const digest = createHash('sha256').update(bytes).digest('hex');
+  const item = await (await call('/api/transfers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'verified.txt', size: bytes.length, expectedSha256: digest }) })).json();
+  const url = `/api/transfers/${item.id}`;
+  assert.equal((await call(url + '/chunk', { method: 'PUT', headers: { 'Upload-Offset': '0', 'Upload-Checksum': '0'.repeat(64) }, body: bytes })).status, 422);
+  assert.equal((await (await call(url)).json()).offset, 0);
+  assert.equal((await call(url + '/chunk', { method: 'PUT', headers: { 'Upload-Offset': '0', 'Upload-Checksum': digest }, body: bytes })).status, 200);
+  const result = await (await call(url + '/finish', { method: 'POST' })).json();
+  assert.equal(result.sha256, digest); assert.equal(result.integrityVerified, true);
+});
+test('only the hash implementation modules are exposed as public vendor resources', async t => {
+  const { base } = await running(t);
+  for (const name of ['sha2.js', '_md.js', '_u64.js', 'utils.js']) {
+    const response = await fetch(`${base}/vendor/${name}`); assert.equal(response.status, 200); assert.match(response.headers.get('content-type'), /javascript/);
+  }
+  assert.equal((await fetch(`${base}/vendor/package.json`)).status, 401);
+});

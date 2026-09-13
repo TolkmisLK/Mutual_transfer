@@ -37,24 +37,26 @@ export class Store {
     try { await handle.writeFile(JSON.stringify(item)); await handle.sync(); } finally { await handle.close(); }
     await fs.rename(temp, dest);
   }
-  async create({ name, size }) {
+  async create({ name, size, expectedSha256 }) {
     if (typeof name !== 'string' || !name.trim() || Buffer.byteLength(name) > 240 || /[\\/\x00-\x1f\x7f]/.test(name))
       throw new TransferError(400, 'Invalid filename');
     if (!Number.isSafeInteger(size) || size < 0) throw new TransferError(400, 'Invalid file size');
+    if (expectedSha256 !== undefined && !/^[a-f0-9]{64}$/.test(expectedSha256)) throw new TransferError(400, 'Invalid SHA-256');
     const reserved = [...this.items.values()].reduce((sum, i) => sum + i.size, 0);
     if (this.items.size >= this.maxFiles || size > this.quota - reserved) throw new TransferError(507, 'Workspace quota exceeded');
-    const item = { id: randomUUID(), name, size, offset: 0, complete: false, createdAt: new Date().toISOString() };
+    const item = { id: randomUUID(), name, size, expectedSha256, offset: 0, complete: false, createdAt: new Date().toISOString() };
     // Reserve synchronously before I/O so concurrent creates cannot exceed the quota.
     this.items.set(item.id, item);
     try { await fs.writeFile(this.file(item.id), '', { flag: 'wx', mode: 0o600 }); await this.save(item); }
     catch (e) { this.items.delete(item.id); await fs.rm(this.file(item.id), { force: true }); throw e; }
     return item;
   }
-  async append(id, offset, bytes) {
+  async append(id, offset, bytes, checksum) {
     const item = this.get(id);
     if (this.busy.has(id)) throw new TransferError(409, 'Transfer is busy; retry');
     if (item.complete || offset !== item.offset) throw new TransferError(409, 'Offset changed; refresh before resuming');
     if (!bytes.length || bytes.length > CHUNK || bytes.length > item.size - item.offset) throw new TransferError(400, 'Invalid chunk length');
+    if (checksum !== undefined && (!/^[a-f0-9]{64}$/.test(checksum) || createHash('sha256').update(bytes).digest('hex') !== checksum)) throw new TransferError(422, 'Chunk checksum mismatch');
     this.busy.add(id);
     try {
       const next = { ...item, offset: item.offset + bytes.length };
@@ -76,7 +78,9 @@ export class Store {
     try {
       const hash = createHash('sha256');
       for await (const part of createReadStream(this.file(id))) hash.update(part);
-      const next = { ...item, complete: true, sha256: hash.digest('hex') };
+      const sha256 = hash.digest('hex');
+      if (item.expectedSha256 && item.expectedSha256 !== sha256) throw new TransferError(422, 'File checksum mismatch; delete this transfer and upload the original file again');
+      const next = { ...item, complete: true, sha256, integrityVerified: Boolean(item.expectedSha256) };
       await this.save(next); this.items.set(id, next); return next;
     } finally { this.busy.delete(id); }
   }

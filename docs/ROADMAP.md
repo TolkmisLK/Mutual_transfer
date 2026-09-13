@@ -2,13 +2,13 @@
 
 ## 1. Recoverable transport — implemented, development preview
 
-Persistent chunk offsets, bounded buffering, unique on-disk names, quota reservation, restart recovery, completion hashing, authenticated HTTP operations and browser clients. Ten local tests pass; remote CI result must be checked separately.
+Persistent chunk offsets, bounded buffering, unique on-disk names, quota reservation, restart recovery, sender-side streaming hashes, chunk checksums, verified completion, authenticated HTTP operations and browser clients. Nineteen local tests pass; remote CI and browser results must be checked separately.
 
 ## 2. Usable cross-device application — next
 
 - Browser interaction tests at phone and desktop widths, including interruption/resume and original/downloaded hash comparison.
 - Cancellation and cleanup of abandoned uploads, progress speed/ETA, expired-session recovery and clear error translations.
-- Sender-side streaming hash verification and per-device acceptance/permissions.
+- Per-device acceptance/permissions (sender-side streaming hash verification is implemented).
 - TLS setup helper and pairing via an expiring invitation/QR code, without weakening the current host/origin checks.
 - Package a desktop host; create a mobile client supporting share sheets and a documented foreground/background lifecycle.
 

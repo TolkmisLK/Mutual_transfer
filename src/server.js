@@ -69,7 +69,11 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       if (!hosts.has(new URL(origin).hostname)) throw new TransferError(403, 'Host not allowed');
       if (req.headers.origin && req.headers.origin !== origin) throw new TransferError(403, 'Cross-origin request rejected');
       const route = url.pathname;
-      if (req.method === 'GET' && ['/', '/app.js', '/style.css'].includes(route)) {
+      if (req.method === 'GET' && ['/vendor/sha2.js', '/vendor/_md.js', '/vendor/_u64.js', '/vendor/utils.js'].includes(route)) {
+        res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
+        res.end(await fs.readFile(new URL(`../node_modules/@noble/hashes/${route.slice('/vendor/'.length)}`, import.meta.url))); return;
+      }
+      if (req.method === 'GET' && ['/', '/app.js', '/integrity.js', '/style.css'].includes(route)) {
         const file = route === '/' ? 'index.html' : route.slice(1);
         res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript; charset=utf-8' : file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8');
         res.end(await fs.readFile(path.join(publicRoot, file))); return;
@@ -106,7 +110,7 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
         if (activeBodies >= 8) throw new TransferError(429, 'Too many simultaneous chunks');
         if (!/^\d+$/.test(req.headers['upload-offset'] || '')) throw new TransferError(400, 'Upload-Offset required');
         activeBodies++;
-        try { json(res, 200, await store.append(id, Number(req.headers['upload-offset']), await body(req, CHUNK))); }
+        try { json(res, 200, await store.append(id, Number(req.headers['upload-offset']), await body(req, CHUNK), req.headers['upload-checksum'])); }
         finally { activeBodies--; } return;
       }
       if (req.method === 'POST' && action === 'finish') { json(res, 200, await store.finish(id)); return; }
