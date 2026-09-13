@@ -57,6 +57,6 @@ npm test
 npm run check
 ```
 
-首批 10 项测试已通过 Linux 和 Windows CI。后续完整性校验增加了哈希边界、误选同名文件、错误块和错误源哈希测试；每轮实际结果记录在 PR/CI。尚未声称通过 Android、iOS 或多 GiB 实机测试。完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
+19 项测试已通过 Linux 和 Windows CI，4 项 Chromium 真实浏览器测试通过，覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输、服务重建续传与下载哈希验证已通过；这不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。证据与复现命令见 [VALIDATION.md](docs/VALIDATION.md)，完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
 
 技术参考：[Node.js HTTP](https://nodejs.org/api/http.html)、[Node.js 文件流](https://nodejs.org/api/fs.html)、[浏览器 File API](https://developer.mozilla.org/en-US/docs/Web/API/File_API)。
