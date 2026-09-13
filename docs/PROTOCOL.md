@@ -7,10 +7,10 @@ All `/api` operations require a valid workspace session cookie or `Authorization
 | POST /api/session | JSON `{key}` | HttpOnly SameSite=Strict session, one hour |
 | DELETE /api/session | Session cookie | Revoke current session |
 | GET /api/transfers | — | Files, offsets and chunk size |
-| POST /api/transfers | JSON `{name,size}` | New random ID; capacity reserved |
+| POST /api/transfers | JSON `{name,size,expectedSha256?}` | New random ID; capacity reserved; new UI always supplies source SHA-256 |
 | GET /api/transfers/:id | — | Persisted offset / completion state |
-| PUT /api/transfers/:id/chunk | Raw bytes, Content-Length, Upload-Offset | Persist new offset; maximum 4 MiB |
-| POST /api/transfers/:id/finish | — | Complete only at expected length; streamed SHA-256 |
+| PUT /api/transfers/:id/chunk | Raw bytes, Content-Length, Upload-Offset, optional Upload-Checksum (hex SHA-256) | Reject a wrong chunk hash with 422 before writing; maximum 4 MiB |
+| POST /api/transfers/:id/finish | — | Complete only at expected length and matching source SHA-256; 422 leaves a mismatch incomplete |
 | GET /api/transfers/:id/download | Optional single Range | Attachment stream, 200 or 206 |
 | GET /api/transfers/:id/preview | Optional single Range | Allowlisted magic bytes only; no HTML/SVG |
 | GET /api/transfers/:id/text | — | Plain text inside JSON, maximum 64 KiB |
@@ -19,3 +19,5 @@ All `/api` operations require a valid workspace session cookie or `Authorization
 On 409, re-read the persisted offset; do not blindly resend at a stale position. If a chunk response is lost, the server may already have committed it. Restart truncates uncommitted trailing bytes back to the saved offset. Completion is idempotent. Final hashing streams from disk; it does not load the complete file in memory.
 
 The data directory is private application state. Run one server process against it; do not mount it into multiple writable servers. Metadata and data must be backed up together with the service stopped. Files are not encrypted at rest by this application; use host disk encryption where required.
+
+Source hashes are lowercase 64-character SHA-256. For backward compatibility an omitted source hash is accepted, but completion then sets `integrityVerified: false`; it must never be displayed as source-verified. The new browser UI hashes the source incrementally, keys local resumptions by that content digest, sends per-chunk digests and verifies the final server result. Older filename/size-only local resumptions are not reused.

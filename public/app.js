@@ -1,3 +1,5 @@
+import { sha256 } from '/vendor/sha2.js';
+import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
 let paused = false; let uploading = false;
 const say = text => { $('status').textContent = text; };
@@ -35,7 +37,7 @@ async function refresh() {
   for (const file of files.sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
     const row = document.createElement('article'); row.className = 'file'; const info = document.createElement('div');
     const title = document.createElement('strong'); title.textContent = file.name;
-    const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = `${size(file.size)} · ${file.complete ? '已完成' : `待续传 ${size(file.offset)}`}`;
+    const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = `${size(file.size)} · ${file.complete ? (file.integrityVerified ? '已校验完成' : '已完成 · 未核对源文件') : `待续传 ${size(file.offset)}`}`;
     info.append(title, meta);
     if (file.sha256) { const hash = document.createElement('div'); hash.className = 'hash'; hash.textContent = `SHA-256 ${file.sha256}`; info.append(hash); }
     const actions = document.createElement('div'); actions.className = 'actions';
@@ -65,21 +67,28 @@ $('files').onchange = async e => {
   if (uploading) return; uploading = true; paused = false; $('files').disabled = true; $('pause').hidden = false; $('progress').hidden = false;
   try {
     for (const file of e.target.files) {
-      const localKey = `mutual-transfer:${file.name}:${file.size}:${file.lastModified}`;
+      say('正在校验源文件，校验完成后开始传输。');
+      const digest = await hashFile(file, sha256, { isCancelled: () => paused, onProgress: n => {
+        $('progress').value = file.size ? n / file.size * 100 : 100;
+        $('progress-label').textContent = `校验 ${file.name} · ${size(n)} / ${size(file.size)}`;
+      } });
+      const localKey = `mutual-transfer:v2:${file.name}:${file.size}:${digest}`;
       let item; const cached = localStorage.getItem(localKey);
       if (cached) {
         try { item = await api(`/api/transfers/${cached}`); } catch (error) { if ($('workspace').hidden) throw error; }
-        if (item && !item.complete && !confirm(`续传「${file.name}」？请确认选择的是原始文件，且内容没有修改。`)) item = null;
-        if (item?.complete) item = null;
+        if (!resumeMatches(item, file, digest)) item = null;
       }
-      if (!item) { item = await api('/api/transfers', post({ name: file.name, size: file.size })); localStorage.setItem(localKey, item.id); }
+      if (!item) { item = await api('/api/transfers', post({ name: file.name, size: file.size, expectedSha256: digest })); localStorage.setItem(localKey, item.id); }
       while (item.offset < file.size && !paused) {
-        item = await api(`/api/transfers/${item.id}/chunk`, { method: 'PUT', headers: { 'Upload-Offset': String(item.offset), 'Content-Type': 'application/octet-stream' }, body: file.slice(item.offset, item.offset + 4 * 1024 * 1024) });
+        const bytes = new Uint8Array(await file.slice(item.offset, item.offset + 4 * 1024 * 1024).arrayBuffer());
+        item = await api(`/api/transfers/${item.id}/chunk`, { method: 'PUT', headers: { 'Upload-Offset': String(item.offset), 'Upload-Checksum': toHex(sha256(bytes)), 'Content-Type': 'application/octet-stream' }, body: bytes });
         $('progress').value = file.size ? item.offset / file.size * 100 : 100;
         $('progress-label').textContent = `${file.name} · ${size(item.offset)} / ${size(file.size)}`;
       }
       if (paused) break;
-      say('正在计算文件校验值，请稍候。'); await api(`/api/transfers/${item.id}/finish`, { method: 'POST' }); localStorage.removeItem(localKey); say(`${file.name} 已上传。`);
+      say('正在核对接收文件的校验值，请稍候。'); const completed = await api(`/api/transfers/${item.id}/finish`, { method: 'POST' });
+      if (completed.sha256 !== digest || !completed.integrityVerified) throw new Error('接收端未通过完整性校验，请保留原文件并重新传输。');
+      localStorage.removeItem(localKey); say(`${file.name} 已上传并通过校验。`);
     }
     await refresh(); if (paused) say('已暂停。重新选择原文件可继续。');
   } catch (error) { say(`传输已停止：${error.message}。重新选择原文件可续传。`); }
