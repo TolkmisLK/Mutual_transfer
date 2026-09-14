@@ -2,9 +2,13 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Temporary pairing — candidate pending CI
+## Temporary pairing — 2026-09-15 (Asia/Shanghai)
 
-Local Node tests pass: 24 cases, including hashed one-time capability expiry/limits, actual concurrent HTTP redemption, restricted invitation privileges, issuer logout/revocation and rate limiting. The real TLS case now pairs a separate Secure-cookie session and downloads the verified file using certificate validation. Syntax checks pass. Six browser scenarios are discovered but new cross-browser pairing interaction awaits CI. Local execution is available again; no new browser or physical-device acceptance is claimed yet. See [PAIRING.md](PAIRING.md).
+[PR #5 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34897925521), candidate `214f3660ba174c91d3ef5a93b1ed1b5a59616f8f`: all four jobs passed, with 24 tests on each of Ubuntu and Windows, six browser scenarios (14.3 seconds) and the real ENOSPC regression. Local 24 tests and syntax checks also passed. Tests include hashed one-time capability expiry/limits, concurrent HTTP redemption, restricted invitation privileges, issuer logout/revocation and rate limiting. The real TLS case pairs a separate Secure-cookie session and downloads the verified file with certificate validation enabled.
+
+The new browser scenario passed in both projects (863/916 ms): an independent 390-pixel context joins with a single-use code, uploads bytes that the owner downloads exactly, cannot create another invitation through either UI or API, and cannot replay the original code after logout. The initial browser attempt exposed a test race reading the code before the API response, plus a cleanup wait on a hidden input. Explicit response-visible waiting and non-interactive cleanup fixed both without weakening protocol assertions. Browser tracing is now disabled to avoid authentication material in artifacts.
+
+Artifact `10369477132` was downloaded and the actual paired and owner phone-viewport screenshots were inspected. The paired page lacks invitation controls; the owner toolbar, file checksums and actions fit the narrow viewport. These are real Chromium renders, not physical-phone or trusted-LAN certificate acceptance. See [PAIRING.md](PAIRING.md).
 
 ## Real HTTPS protocol acceptance — 2026-09-15 (Asia/Shanghai)
 
