@@ -57,6 +57,6 @@ npm test
 npm run check
 ```
 
-21 项测试已通过 Linux 和 Windows CI，包括真实 HTTPS 证书信任/主机名校验、加密上传下载和会话退出；4 项 Chromium 真实浏览器测试通过，覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输、服务重建续传与下载哈希验证已通过；这不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。证据与复现命令见 [VALIDATION.md](docs/VALIDATION.md)，完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
+21 项测试已通过 Linux 和 Windows CI，包括真实 HTTPS 证书信任/主机名校验、加密上传下载和会话退出；4 项 Chromium 真实浏览器测试通过，覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输、服务重建续传与下载哈希验证已通过；这不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。独立 Linux 临时文件系统实际写满后的断点保留、失败回滚与哈希一致续传也已通过。证据与复现命令见 [VALIDATION.md](docs/VALIDATION.md)，完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
 
 技术参考：[Node.js HTTP](https://nodejs.org/api/http.html)、[Node.js 文件流](https://nodejs.org/api/fs.html)、[浏览器 File API](https://developer.mozilla.org/en-US/docs/Web/API/File_API)。

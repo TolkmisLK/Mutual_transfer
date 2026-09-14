@@ -12,6 +12,14 @@ The initial candidate failed because Node derived TLS servername from the delibe
 
 The local execution environment was unavailable, so these are CI execution results, not local tests. No new browser screenshot inspection is claimed for this revision. This does not establish operator-issued certificate trust on physical phones or native pairing/installation. See [HTTPS.md](HTTPS.md) for deployment and trust boundaries.
 
+## Real Linux disk-full recovery — 2026-09-15 (Asia/Shanghai)
+
+[PR #4 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34866838925), candidate `e55354df3b5f43988e6877e0cc7d50994cb0c6e1`: the separate disk-full job, both 21-test platform jobs and all four browser scenarios passed.
+
+The disk-full job mounted a new 16,777,216-byte tmpfs and obtained real kernel ENOSPC. A failed second chunk left the first 4 MiB checkpoint unchanged; failed creation released its in-memory reservation. Incomplete data could not be downloaded. After releasing fixture capacity and reconstructing the service, the upload resumed. Exhausting space again at the completion-metadata checkpoint did not mark the file complete. A final free-space/restart/finish/download cycle reproduced the source SHA-256 over 8 MiB of actual data. All five JSON evidence flags were true. The exit trap unmounted only the generated temporary fixture.
+
+This covers real full-filesystem behavior on Linux tmpfs, not physical-media failure, power loss or Windows full-disk acceptance. See [DISK-FULL.md](DISK-FULL.md). There was no local runtime for this run; the kernel/service execution occurred in CI.
+
 ## Automated service and browser checks
 
 [PR #2 candidate CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34779873509), commit `0dcce5a8dad1be21ff328ae0e98a2f7d65a64aa0`:
@@ -52,4 +60,4 @@ The opt-in command needs file size plus 1 GiB of free disk. It is not run in ord
 
 ## Remaining gates
 
-Physical PC↔PC and mobile↔PC transfers; Wi-Fi loss and reconnection; HTTPS trust/pairing UX; mobile foreground/background behavior; native packaging and clean-machine installation; disk-full behavior and multi-device access permissions. Passing the above tests does not remove these gates.
+Physical PC↔PC and mobile↔PC transfers; Wi-Fi loss and reconnection; HTTPS trust/pairing UX; mobile foreground/background behavior; native packaging and clean-machine installation; Windows disk-full/physical-storage failure behavior and multi-device access permissions. Passing the above tests does not remove these gates.
