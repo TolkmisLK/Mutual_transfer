@@ -97,7 +97,7 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       const bearer = (req.headers.authorization || '').replace(/^Bearer /, '');
       if (!(cookie && (sessions.get(cookie) || 0) > Date.now()) && !equal(bearer, key)) throw new TransferError(401, 'Join the workspace first');
       if (req.method === 'DELETE' && route === '/api/session') {
-        sessions.delete(cookie); res.setHeader('Set-Cookie', 'mutual_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'); json(res, 200, { ok: true }); return;
+        sessions.delete(cookie); res.setHeader('Set-Cookie', 'mutual_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + (tls ? '; Secure' : '')); json(res, 200, { ok: true }); return;
       }
       if (req.method === 'GET' && route === '/api/transfers') { json(res, 200, { chunkSize: CHUNK, files: [...store.items.values()] }); return; }
       if (req.method === 'POST' && route === '/api/transfers') { json(res, 201, await store.create(await input(req))); return; }
@@ -141,22 +141,41 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       json(res, e instanceof TransferError ? e.status : 500, { error: e instanceof TransferError ? e.message : 'Storage operation failed; check available disk space' });
     }
   }
-  const server = tls ? https.createServer(tls, handle) : http.createServer(handle);
+  const server = tls ? https.createServer({ ...tls, minVersion: 'TLSv1.2' }, handle) : http.createServer(handle);
   server.requestTimeout = 60000; server.headersTimeout = 15000; server.maxConnections = 64;
   return { server, store };
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const key = process.env.MUTUAL_KEY || randomBytes(24).toString('base64url');
-  const host = process.env.HOST || '127.0.0.1'; const port = Number(process.env.PORT || 8787);
-  const cert = process.env.TLS_CERT; const privateKey = process.env.TLS_KEY;
+export async function serverOptions(env = process.env) {
+  const generatedKey = env.MUTUAL_KEY === undefined;
+  const key = generatedKey ? randomBytes(24).toString('base64url') : env.MUTUAL_KEY;
+  if (typeof key !== 'string' || key.length < 24 || key.length > 1024) throw new Error('MUTUAL_KEY must contain 24–1024 characters');
+  const host = env.HOST || '127.0.0.1';
+  const portText = env.PORT === undefined ? '8787' : env.PORT;
+  if (!/^\d{1,5}$/.test(portText) || Number(portText) < 1 || Number(portText) > 65535) throw new Error('PORT must be an integer from 1 to 65535');
+  const cert = env.TLS_CERT; const privateKey = env.TLS_KEY;
   if (!!cert !== !!privateKey) throw new Error('TLS_CERT and TLS_KEY must be supplied together');
+  if (!cert && !['localhost', '127.0.0.1', '::1'].includes(host) && env.MUTUAL_ALLOW_HTTP !== '1') throw new Error('LAN mode requires TLS, or explicitly set MUTUAL_ALLOW_HTTP=1 for a trusted-network development test');
+  let allowedHosts;
+  if (env.ALLOWED_HOSTS !== undefined) {
+    allowedHosts = env.ALLOWED_HOSTS.split(',').map(value => {
+      const name = value.trim();
+      if (!/^(?:[a-zA-Z0-9.-]+|\[[a-fA-F0-9:.]+\])$/.test(name)) throw new Error('ALLOWED_HOSTS requires hostnames or bracketed IPv6 addresses, without ports, URLs or wildcards');
+      try { return new URL('https://' + name).hostname; }
+      catch { throw new Error('Invalid ALLOWED_HOSTS entry'); }
+    });
+  }
   const tls = cert ? { cert: await fs.readFile(cert), key: await fs.readFile(privateKey) } : undefined;
-  if (!tls && !['localhost', '127.0.0.1', '::1'].includes(host) && process.env.MUTUAL_ALLOW_HTTP !== '1') throw new Error('LAN mode requires TLS, or explicitly set MUTUAL_ALLOW_HTTP=1 for a trusted-network development test');
-  const { server } = await createServer({ root: process.env.DATA_DIR || './data', key, tls, allowedHosts: process.env.ALLOWED_HOSTS?.split(',').map(h => h.trim()) });
-  server.listen(port, host, () => {
-    console.log(`Mutual Transfer listening on ${host}:${port}`);
-    if (!process.env.MUTUAL_KEY) console.log(`Workspace key (share only with intended devices): ${key}`);
+  return { key, host, port: Number(portText), root: env.DATA_DIR || './data', tls, allowedHosts, generatedKey };
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const options = await serverOptions();
+  const { server } = await createServer(options);
+  server.listen(options.port, options.host, () => {
+    const address = options.host.includes(':') ? '[' + options.host + ']' : options.host;
+    console.log('Mutual Transfer listening on ' + (options.tls ? 'https' : 'http') + '://' + address + ':' + options.port);
+    if (options.generatedKey) console.log('Workspace key (share only with intended devices): ' + options.key);
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { server.close(); setTimeout(() => process.exit(0), 5000).unref(); });
 }

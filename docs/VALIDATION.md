@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## HTTPS candidate — CI pending
+
+Added real TLS trust/hostname rejection, authenticated upload/download, secure-cookie logout and fail-closed configuration checks. They have not yet run for this candidate. The local execution environment was unavailable; do not treat remote source inspection as a passing local test. The prior HTTP and browser evidence below remains distinct. See [HTTPS.md](HTTPS.md) for deployment and trust boundaries.
+
 ## Automated service and browser checks
 
 [PR #2 candidate CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34779873509), commit `0dcce5a8dad1be21ff328ae0e98a2f7d65a64aa0`:
