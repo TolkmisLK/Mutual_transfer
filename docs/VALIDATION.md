@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Windows portable server — candidate pending CI
+
+The packaging slice pins official Node 24.21.0 Windows x64 and its published ZIP SHA-256, assembles only allowlisted application/vendor/license files, and emits per-file and ZIP checksums. The acceptance harness will extract the archive and launch its own bundled node.exe from a path containing spaces, exercise login/upload/normal stop/restart/resume/download and old-cookie invalidation, and verify data remains outside the program folder. Local portable configuration unit tests pass (25 total tests); no Windows packaging/process execution is claimed until CI succeeds. Browser auto-open, .cmd double-click, clean-consumer machine and physical-LAN use are outside that harness.
+
 ## Temporary pairing — 2026-09-15 (Asia/Shanghai)
 
 [PR #5 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34897925521), candidate `214f3660ba174c91d3ef5a93b1ed1b5a59616f8f`: all four jobs passed, with 24 tests on each of Ubuntu and Windows, six browser scenarios (14.3 seconds) and the real ENOSPC regression. Local 24 tests and syntax checks also passed. Tests include hashed one-time capability expiry/limits, concurrent HTTP redemption, restricted invitation privileges, issuer logout/revocation and rate limiting. The real TLS case pairs a separate Secure-cookie session and downloads the verified file with certificate validation enabled.

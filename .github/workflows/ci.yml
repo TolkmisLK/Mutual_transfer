@@ -7,6 +7,40 @@ on:
 permissions:
   contents: read
 jobs:
+  windows-portable:
+    runs-on: windows-2022
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.21.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Package pinned runtime and allowlisted application files
+        shell: pwsh
+        run: ./tool/build-windows-portable.ps1
+      - name: Verify extracted package and actual bundled process
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = Get-Item dist/*-preview-windows-x64.zip
+          $expected = ((Get-Content -LiteralPath "$($zip.FullName).sha256" -Raw).Trim() -split '\s+')[0]
+          if ((Get-FileHash -LiteralPath $zip.FullName -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Portable ZIP checksum mismatch' }
+          $fixture = Join-Path $env:RUNNER_TEMP ('mutual portable extracted ' + [guid]::NewGuid().ToString('N'))
+          New-Item -ItemType Directory -Path $fixture | Out-Null
+          try {
+            Expand-Archive -LiteralPath $zip.FullName -DestinationPath $fixture
+            $bundle = Join-Path $fixture $zip.BaseName
+            $report = node tool/verify-windows-portable.js $bundle
+            if ($LASTEXITCODE -ne 0) { throw 'Packaged-process acceptance failed' }
+            $report | Set-Content -LiteralPath dist/windows-portable-validation.json -Encoding utf8
+            Write-Output $report
+          } finally { Remove-Item -LiteralPath $fixture -Recurse -Force }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mutual-transfer-windows-portable
+          path: dist/
   test:
     strategy:
       matrix:
