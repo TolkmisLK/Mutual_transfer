@@ -1,0 +1,7 @@
+# Disk-full recovery acceptance
+
+The opt-in Linux integration check in `tool/disk-full.js` exercises actual kernel `ENOSPC`, not a mocked filesystem exception. CI creates a new 16 MiB tmpfs mount under its temporary directory, runs the service against it, and unmounts only that generated mountpoint in an exit trap. The script refuses a non-Linux, non-tmpfs, non-empty or out-of-range-capacity directory. Never point it at real files or mount over an existing data directory.
+
+The scenario uploads one 4 MiB chunk, fills the remaining fixture capacity until the kernel rejects a write, and attempts another chunk. It checks that the API reports failure, preserves the committed offset, refuses download of the incomplete file, and releases a failed new-file reservation. After freeing fixture capacity and rebuilding the service, it resumes the original upload. It fills capacity again before the final metadata commit, checks the file is still not marked complete, then frees capacity, restarts and completes with exact source/download SHA-256. All payloads are generated fixture bytes.
+
+This tests application recovery on a real full Linux filesystem. It does not simulate physical-disk failure, abrupt power loss, Windows disk-full behavior or Wi-Fi interruption. Ordinary `npm test` remains safe without mounting/filling a filesystem; the new scenario is a separate CI job with a five-minute limit. Local execution was unavailable when added, so only a successful CI run can establish a pass. Evidence belongs in [VALIDATION.md](VALIDATION.md).

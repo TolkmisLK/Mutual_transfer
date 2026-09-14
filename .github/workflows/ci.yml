@@ -39,3 +39,27 @@ jobs:
           path: |
             playwright-report/
             test-results/
+  disk-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Recover after real kernel ENOSPC in an isolated tiny filesystem
+        shell: bash
+        run: |
+          set -euo pipefail
+          fixture=$(mktemp -d "$RUNNER_TEMP/mutual-diskfull.XXXXXX")
+          mounted=0
+          cleanup() {
+            if [ "$mounted" = 1 ]; then sudo umount "$fixture"; fi
+            rmdir "$fixture"
+          }
+          trap cleanup EXIT
+          sudo mount -t tmpfs -o "size=16m,mode=0700,uid=$(id -u),gid=$(id -g)" tmpfs "$fixture"
+          mounted=1
+          MUTUAL_DISKFULL_ROOT="$fixture" node tool/disk-full.js
