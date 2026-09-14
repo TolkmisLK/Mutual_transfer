@@ -7,6 +7,7 @@ import { networkInterfaces } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Store, TransferError, CHUNK } from './store.js';
+import { Pairings } from './pairing.js';
 
 const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
 function localHosts() {
@@ -57,7 +58,14 @@ async function previewType(file) {
 export async function createServer({ root, key, quota, tls, allowedHosts } = {}) {
   if (typeof key !== 'string' || key.length < 24) throw new Error('Workspace key must have at least 24 characters');
   const store = await new Store(root, { quota }).init();
-  const sessions = new Map(); const attempts = new Map(); let activeBodies = 0;
+  const sessions = new Map(); const attempts = new Map(); const pairings = new Pairings(); let activeBodies = 0;
+  function pruneSessions(now) { for (const [id, session] of sessions) if (session.expiresAt <= now) { sessions.delete(id); pairings.revoke(id); } }
+  function issueSession(res, canPair) {
+    const id = randomBytes(32).toString('hex'); const expiresAt = Date.now() + 3600000;
+    sessions.set(id, { expiresAt, canPair });
+    res.setHeader('Set-Cookie', `mutual_session=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600${tls ? '; Secure' : ''}`);
+    json(res, 200, { ok: true, canPair, expiresAt });
+  }
   const hosts = new Set(allowedHosts || localHosts());
   async function handle(req, res) {
     res.setHeader('X-Content-Type-Options', 'nosniff'); res.setHeader('Referrer-Policy', 'no-referrer');
@@ -69,6 +77,7 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       if (!hosts.has(new URL(origin).hostname)) throw new TransferError(403, 'Host not allowed');
       if (req.headers.origin && req.headers.origin !== origin) throw new TransferError(403, 'Cross-origin request rejected');
       const route = url.pathname;
+      if (['/api/pair', '/api/pairings'].includes(route) && !tls && !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(req.socket.remoteAddress)) throw new TransferError(403, 'Pairing requires HTTPS except on loopback');
       if (req.method === 'GET' && ['/vendor/sha2.js', '/vendor/_md.js', '/vendor/_u64.js', '/vendor/utils.js'].includes(route)) {
         res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
         res.end(await fs.readFile(new URL(`../node_modules/@noble/hashes/${route.slice('/vendor/'.length)}`, import.meta.url))); return;
@@ -78,7 +87,7 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
         res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript; charset=utf-8' : file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8');
         res.end(await fs.readFile(path.join(publicRoot, file))); return;
       }
-      if (req.method === 'POST' && route === '/api/session') {
+      if (req.method === 'POST' && ['/api/session', '/api/pair'].includes(route)) {
         const now = Date.now();
         for (const [ip, v] of attempts) if (now - v.start > 60000) attempts.delete(ip);
         const ip = req.socket.remoteAddress;
@@ -86,18 +95,27 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
         if (attempts.size >= 1000 || ++attempt.count > 12) throw new TransferError(429, 'Please wait before trying again');
         attempts.set(ip, attempt);
         const value = await input(req);
-        if (!value || typeof value.key !== 'string' || !equal(value.key, key)) throw new TransferError(401, 'Incorrect workspace key');
-        for (const [id, expiry] of sessions) if (expiry <= now) sessions.delete(id);
+        if (route === '/api/session' && (typeof value.key !== 'string' || !equal(value.key, key))) throw new TransferError(401, 'Incorrect workspace key');
+        pruneSessions(now);
         if (sessions.size >= 128) throw new TransferError(429, 'Workspace session limit reached');
-        const id = randomBytes(32).toString('hex'); sessions.set(id, now + 3600000);
-        res.setHeader('Set-Cookie', `mutual_session=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600${tls ? '; Secure' : ''}`);
-        json(res, 200, { ok: true }); return;
+        if (route === '/api/pair') pairings.consume(value.code, issuer => sessions.get(issuer)?.canPair === true && sessions.get(issuer).expiresAt > Date.now());
+        issueSession(res, route === '/api/session'); return;
       }
       const cookie = /(?:^|;\s*)mutual_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
       const bearer = (req.headers.authorization || '').replace(/^Bearer /, '');
-      if (!(cookie && (sessions.get(cookie) || 0) > Date.now()) && !equal(bearer, key)) throw new TransferError(401, 'Join the workspace first');
+      pruneSessions(Date.now()); const session = sessions.get(cookie);
+      if (!session && !equal(bearer, key)) throw new TransferError(401, 'Join the workspace first');
+      if (req.method === 'GET' && route === '/api/session') { json(res, 200, { canPair: session?.canPair === true, expiresAt: session?.expiresAt ?? null }); return; }
+      if (route === '/api/pairings') {
+        // The long-lived key must first create a browser session. Paired
+        // sessions cannot recursively invite devices, even via this API.
+        if (!session?.canPair) throw new TransferError(403, 'Sign in with the workspace key to manage pairing');
+        if (req.method === 'POST') { json(res, 201, pairings.create(cookie)); return; }
+        if (req.method === 'DELETE') { pairings.revoke(cookie); json(res, 200, { ok: true }); return; }
+        throw new TransferError(405, 'Method not allowed');
+      }
       if (req.method === 'DELETE' && route === '/api/session') {
-        sessions.delete(cookie); res.setHeader('Set-Cookie', 'mutual_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + (tls ? '; Secure' : '')); json(res, 200, { ok: true }); return;
+        sessions.delete(cookie); pairings.revoke(cookie); res.setHeader('Set-Cookie', 'mutual_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0' + (tls ? '; Secure' : '')); json(res, 200, { ok: true }); return;
       }
       if (req.method === 'GET' && route === '/api/transfers') { json(res, 200, { chunkSize: CHUNK, files: [...store.items.values()] }); return; }
       if (req.method === 'POST' && route === '/api/transfers') { json(res, 201, await store.create(await input(req))); return; }
