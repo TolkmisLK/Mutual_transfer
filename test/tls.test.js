@@ -74,6 +74,12 @@ test('real HTTPS validates trust and hostname, then encrypts upload, range downl
   for (const attribute of ['HttpOnly', 'SameSite=Strict', 'Secure', 'Path=/']) assert.ok(setCookie.includes(attribute));
   const cookie = setCookie.split(';')[0];
   const call = (route, options = {}) => request(port, route, { ca, ...options, headers: { Cookie: cookie, ...options.headers } });
+  const invite = await call('/api/pairings', { method: 'POST', headers: { Origin: origin } });
+  assert.equal(invite.status, 201); const pairing = JSON.parse(invite.bytes);
+  const paired = await request(port, '/api/pair', { ca, method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ code: pairing.code }) });
+  assert.equal(paired.status, 200); assert.equal(JSON.parse(paired.bytes).canPair, false);
+  for (const attribute of ['HttpOnly', 'SameSite=Strict', 'Secure']) assert.ok(paired.headers['set-cookie'][0].includes(attribute));
+  const guestCookie = paired.headers['set-cookie'][0].split(';')[0];
   assert.equal((await call('/api/transfers', { headers: { Origin: 'http://127.0.0.1:' + port } })).status, 403);
   assert.equal((await call('/api/transfers', { servername: 'localhost', headers: { Host: 'unlisted.example' } })).status, 403);
   const bytes = randomBytes(65537); const digest = createHash('sha256').update(bytes).digest('hex');
@@ -87,6 +93,9 @@ test('real HTTPS validates trust and hostname, then encrypts upload, range downl
   const downloaded = await call(route + '/download');
   assert.equal(downloaded.status, 200); assert.deepEqual(downloaded.bytes, bytes);
   assert.equal(createHash('sha256').update(downloaded.bytes).digest('hex'), digest);
+  const guestDownload = await request(port, route + '/download', { ca, headers: { Cookie: guestCookie } });
+  assert.equal(guestDownload.status, 200); assert.deepEqual(guestDownload.bytes, bytes);
+  assert.equal((await request(port, '/api/pairings', { ca, method: 'POST', headers: { Cookie: guestCookie } })).status, 403);
   const tail = await call(route + '/download', { headers: { Range: 'bytes=65530-' } });
   assert.equal(tail.status, 206); assert.deepEqual(tail.bytes, bytes.subarray(65530));
   const logout = await call('/api/session', { method: 'DELETE', headers: { Origin: origin } });

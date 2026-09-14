@@ -1,14 +1,15 @@
 import { sha256 } from '/vendor/sha2.js';
 import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
-let paused = false; let uploading = false;
+let paused = false; let uploading = false; let pairingTimer;
+function clearPairing() { clearTimeout(pairingTimer); $('issued-code').textContent = ''; $('pairing-expiry').textContent = ''; $('pairing-dialog').close(); }
 const say = text => { $('status').textContent = text; };
 const size = n => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
 async function api(url, options = {}) {
   const response = await fetch(url, { credentials: 'same-origin', ...options });
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401) { $('join').hidden = false; $('workspace').hidden = true; }
+    if (response.status === 401) { clearPairing(); $('join').hidden = false; $('workspace').hidden = true; }
     throw new Error(result.error || `请求失败 (${response.status})`);
   }
   return result;
@@ -31,7 +32,9 @@ async function preview(file, text = false) {
   $('preview-body').append(el);
 }
 async function refresh() {
+  const session = await api('/api/session');
   const { files } = await api('/api/transfers'); $('join').hidden = true; $('workspace').hidden = false;
+  $('new-pairing').hidden = !session.canPair;
   $('list').replaceChildren();
   if (!files.length) { const empty = document.createElement('p'); empty.textContent = '还没有文件。上传后，另一台设备刷新即可看到。'; $('list').append(empty); }
   for (const file of files.sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
@@ -55,10 +58,33 @@ $('login').onsubmit = async e => {
   try { await api('/api/session', post({ key: $('key').value })); $('key').value = ''; await refresh(); say('已加入文件空间。'); }
   catch (error) { say(error.message); } finally { b.disabled = false; }
 };
+$('pair-login').onsubmit = async e => {
+  e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
+  try { await api('/api/pair', post({ code: $('pair-code').value })); await refresh(); say('配对成功。此会话 1 小时后过期，可管理空间内全部文件。'); }
+  catch (error) { say(error.message); } finally { $('pair-code').value = ''; b.disabled = false; }
+};
+$('new-pairing').onclick = async () => {
+  const button = $('new-pairing'); button.disabled = true;
+  try {
+    const pairing = await api('/api/pairings', { method: 'POST' });
+    clearTimeout(pairingTimer); $('issued-code').textContent = pairing.code;
+    $('pairing-expiry').textContent = '单次有效，过期时间：' + new Date(pairing.expiresAt).toLocaleTimeString();
+    $('pairing-error').textContent = ''; $('pairing-dialog').showModal();
+    pairingTimer = setTimeout(() => { $('issued-code').textContent = ''; $('pairing-expiry').textContent = '配对码已过期，请关闭后重新生成。'; }, Math.max(0, pairing.expiresAt - Date.now()));
+  } catch (error) { say(error.message); } finally { button.disabled = false; }
+};
+async function revokePairing() {
+  const button = $('revoke-pairing'); if (button.disabled) return; button.disabled = true;
+  try { await api('/api/pairings', { method: 'DELETE' }); clearPairing(); }
+  catch { $('issued-code').textContent = ''; $('pairing-error').textContent = '撤销未确认，请恢复连接后重试；配对码仍会自动过期。'; }
+  finally { button.disabled = false; }
+}
+$('revoke-pairing').onclick = revokePairing;
+$('pairing-dialog').addEventListener('cancel', e => { e.preventDefault(); revokePairing(); });
 $('refresh').onclick = () => refresh().catch(e => say(e.message));
 $('logout').onclick = async () => {
   if (uploading) { say('请先暂停传输，再退出。'); return; }
-  try { await api('/api/session', { method: 'DELETE' }); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
+  try { await api('/api/session', { method: 'DELETE' }); clearPairing(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
 };
 $('close').onclick = () => $('preview').close();
 $('preview').addEventListener('close', () => $('preview-body').replaceChildren());

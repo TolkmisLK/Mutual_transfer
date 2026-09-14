@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Temporary pairing — candidate pending CI
+
+Local Node tests pass: 24 cases, including hashed one-time capability expiry/limits, actual concurrent HTTP redemption, restricted invitation privileges, issuer logout/revocation and rate limiting. The real TLS case now pairs a separate Secure-cookie session and downloads the verified file using certificate validation. Syntax checks pass. Six browser scenarios are discovered but new cross-browser pairing interaction awaits CI. Local execution is available again; no new browser or physical-device acceptance is claimed yet. See [PAIRING.md](PAIRING.md).
+
 ## Real HTTPS protocol acceptance — 2026-09-15 (Asia/Shanghai)
 
 [PR #3 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34865814288), candidate `d17622be774b90b74620c487a34cdbc931ec8ae5`: Ubuntu and Windows 2022 each passed all 21 service/integrity/configuration tests. The four existing Chromium scenarios also passed (11.3 seconds).

@@ -35,3 +35,38 @@ test('interrupted network resumes the same content without duplicating the trans
   expect(after).toHaveLength(1); expect(after[0].id).toBe(before.id);
   expect(after[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
 });
+test('a separate browser pairs once, transfers a file and cannot delegate access', async ({ page, browser }, info) => {
+  const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
+  const guest = await guestContext.newPage();
+  try {
+    await page.getByRole('button', { name: '配对新设备', exact: true }).click();
+    const code = await page.locator('#issued-code').textContent(); expect(code).toMatch(/^[A-F0-9]{5}(?:-[A-F0-9]{5}){3}$/);
+    await guest.goto(page.url()); await guest.getByLabel('临时配对码', { exact: true }).fill(code);
+    await guest.getByRole('button', { name: '配对加入', exact: true }).click();
+    await expect(guest.locator('#workspace')).toBeVisible();
+    await expect(guest.locator('#pair-code')).toHaveValue('');
+    await expect(guest.getByRole('button', { name: '配对新设备', exact: true })).toBeHidden();
+    expect(await guest.evaluate(async () => (await fetch('/api/pairings', { method: 'POST' })).status)).toBe(403);
+    await page.getByRole('button', { name: '关闭并撤销未用配对码' }).click();
+    await expect(page.locator('#issued-code')).toHaveText('');
+    const name = 'paired-' + info.project.name + '.txt'; const bytes = Buffer.from('配对设备传输：完整性校验');
+    await guest.locator('#files').setInputFiles({ name, mimeType: 'text/plain', buffer: bytes });
+    await expect(guest.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+    await page.getByRole('button', { name: '刷新', exact: true }).click();
+    const row = page.locator('.file').filter({ hasText: name }); await expect(row).toContainText(createHash('sha256').update(bytes).digest('hex'));
+    const download = page.waitForEvent('download'); await row.getByRole('link', { name: '下载', exact: true }).click();
+    expect(await fs.readFile(await (await download).path())).toEqual(bytes);
+    expect(await guest.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await guest.screenshot({ path: info.outputPath('paired-mobile-workspace.png'), fullPage: true });
+    await guest.getByRole('button', { name: '退出', exact: true }).click();
+    await guest.getByLabel('临时配对码', { exact: true }).fill(code);
+    await guest.getByRole('button', { name: '配对加入', exact: true }).click();
+    await expect(guest.locator('#status')).toContainText('invalid, expired or already used');
+    await expect(guest.locator('#workspace')).toBeHidden();
+  } finally {
+    await guest.locator('#pair-code').fill('').catch(() => {});
+    await page.locator('#issued-code').evaluate(el => { el.textContent = ''; }).catch(() => {});
+    await page.evaluate(() => fetch('/api/pairings', { method: 'DELETE' })).catch(() => {});
+    await guestContext.close();
+  }
+});
