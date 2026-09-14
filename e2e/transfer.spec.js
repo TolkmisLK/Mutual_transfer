@@ -40,6 +40,7 @@ test('a separate browser pairs once, transfers a file and cannot delegate access
   const guest = await guestContext.newPage();
   try {
     await page.getByRole('button', { name: '配对新设备', exact: true }).click();
+    await expect(page.locator('#issued-code')).toHaveText(/^[A-F0-9]{5}(?:-[A-F0-9]{5}){3}$/);
     const code = await page.locator('#issued-code').textContent(); expect(code).toMatch(/^[A-F0-9]{5}(?:-[A-F0-9]{5}){3}$/);
     await guest.goto(page.url()); await guest.getByLabel('临时配对码', { exact: true }).fill(code);
     await guest.getByRole('button', { name: '配对加入', exact: true }).click();
@@ -64,7 +65,7 @@ test('a separate browser pairs once, transfers a file and cannot delegate access
     await expect(guest.locator('#status')).toContainText('invalid, expired or already used');
     await expect(guest.locator('#workspace')).toBeHidden();
   } finally {
-    await guest.locator('#pair-code').fill('').catch(() => {});
+    await guest.evaluate(() => { const input = document.getElementById('pair-code'); if (input) input.value = ''; }).catch(() => {});
     await page.locator('#issued-code').evaluate(el => { el.textContent = ''; }).catch(() => {});
     await page.evaluate(() => fetch('/api/pairings', { method: 'DELETE' })).catch(() => {});
     await guestContext.close();
