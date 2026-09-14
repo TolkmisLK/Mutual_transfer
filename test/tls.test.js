@@ -75,7 +75,7 @@ test('real HTTPS validates trust and hostname, then encrypts upload, range downl
   const cookie = setCookie.split(';')[0];
   const call = (route, options = {}) => request(port, route, { ca, ...options, headers: { Cookie: cookie, ...options.headers } });
   assert.equal((await call('/api/transfers', { headers: { Origin: 'http://127.0.0.1:' + port } })).status, 403);
-  assert.equal((await call('/api/transfers', { headers: { Host: 'unlisted.example' } })).status, 403);
+  assert.equal((await call('/api/transfers', { servername: 'localhost', headers: { Host: 'unlisted.example' } })).status, 403);
   const bytes = randomBytes(65537); const digest = createHash('sha256').update(bytes).digest('hex');
   const created = await call('/api/transfers', { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin },
     body: JSON.stringify({ name: 'tls-工作.bin', size: bytes.length, expectedSha256: digest }) });
