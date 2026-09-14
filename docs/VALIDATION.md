@@ -2,9 +2,15 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## HTTPS candidate — CI pending
+## Real HTTPS protocol acceptance — 2026-09-15 (Asia/Shanghai)
 
-Added real TLS trust/hostname rejection, authenticated upload/download, secure-cookie logout and fail-closed configuration checks. They have not yet run for this candidate. The local execution environment was unavailable; do not treat remote source inspection as a passing local test. The prior HTTP and browser evidence below remains distinct. See [HTTPS.md](HTTPS.md) for deployment and trust boundaries.
+[PR #3 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34865814288), candidate `d17622be774b90b74620c487a34cdbc931ec8ae5`: Ubuntu and Windows 2022 each passed all 21 service/integrity/configuration tests. The four existing Chromium scenarios also passed (11.3 seconds).
+
+The real HTTPS scenario passed in 546 ms on Ubuntu and 1,488 ms on Windows. Each generated a fresh one-day loopback certificate using OpenSSL; no system trust store was modified. Default certificate validation rejected the untrusted issuer and a mismatched hostname. Requests trusting only the fixture certificate negotiated TLS 1.2/1.3, authenticated with a Secure/HttpOnly/SameSite cookie, rejected an HTTP-origin mismatch and an unlisted HTTP Host, uploaded 65,537 random bytes with source/chunk SHA-256, verified full and Range downloads, and confirmed logout invalidated the original cookie.
+
+The initial candidate failed because Node derived TLS servername from the deliberately unlisted HTTP Host before the service could apply its Host check. The corrected Host case explicitly retains the valid TLS name; the separate wrong-name TLS rejection remains intact. No certificate check or test gate was disabled.
+
+The local execution environment was unavailable, so these are CI execution results, not local tests. No new browser screenshot inspection is claimed for this revision. This does not establish operator-issued certificate trust on physical phones or native pairing/installation. See [HTTPS.md](HTTPS.md) for deployment and trust boundaries.
 
 ## Automated service and browser checks
 
