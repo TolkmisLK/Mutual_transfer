@@ -2,9 +2,11 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Exclusive data ownership — candidate pending CI
+## Exclusive data ownership — 2026-09-15 (Asia/Shanghai)
 
-Added an OS IPC guard acquired before store recovery, plus real-process contention/forced-exit/recovery tests and startup-failure cleanup cases. Syntax checks pass locally. This sandbox rejects Linux abstract-socket binding with EPERM, so local service tests cannot execute with this guard; no bypass or fake success is used. Windows/Linux CI must validate the actual guard and the full existing service, browser, disk-full and portable package gates. See [DATA-OWNERSHIP.md](DATA-OWNERSHIP.md).
+[PR #7 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34922254993), candidate `00adfa3d07a2a1c789b140b847ea3511ffab8ab9`: all five jobs passed. Ubuntu and Windows each passed 28 tests, including actual OS ownership, path aliases, failed initialization cleanup and real child-process contention/forced-exit recovery (423/460 ms). The competing process was rejected before truncating a modeled live tail; killing only the fixture owner freed the guard, and a new process recovered the committed checkpoint. This is process-exit acceptance, not power-loss durability.
+
+Six browser scenarios passed (12.1 seconds), as did real ENOSPC recovery and the actual Windows portable-process harness. The new bundle's 28 manifest files verified; its 4,259,841-byte restart/resume/download check still passed. No new screenshot inspection or physical-device result is claimed. Syntax checks pass locally, but this sandbox rejects Linux abstract-socket binding with EPERM, so local service execution with the guard remains unavailable; no bypass was used. See [DATA-OWNERSHIP.md](DATA-OWNERSHIP.md).
 
 ## Windows portable server — 2026-09-15 (Asia/Shanghai)
 
