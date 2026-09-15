@@ -28,6 +28,34 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { name: '加入', exact: true }).click();
   await expect(page.locator('#workspace')).toBeVisible();
 });
+test('installed-web worker gives a private offline page and resumes the original upload after reconnect', async ({ page, context }, info) => {
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; }); await page.reload();
+  await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+  const manifest = await page.evaluate(async () => { const response = await fetch('/manifest.webmanifest'); return { type: response.headers.get('content-type'), body: await response.json() }; });
+  expect(manifest.type).toContain('application/manifest+json'); expect(manifest.body.display).toBe('standalone'); expect(manifest.body.start_url).toBe('/');
+  await expect(page.locator('#workspace')).toBeVisible();
+  const name = 'private-offline-' + info.project.name + '.bin'; const bytes = Buffer.alloc(9 * 1024 * 1024, 81); let chunks = 0;
+  await page.route('**/chunk', route => ++chunks === 2 ? route.abort('failed') : route.continue());
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('#status')).toContainText('传输已停止');
+  const before = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.find(f => f.name === name), name); expect(before.offset).toBe(4 * 1024 * 1024);
+  await page.unroute('**/chunk');
+  try {
+    await context.setOffline(true); await page.reload();
+    await expect(page.getByRole('heading', { name: '暂时无法连接文件空间' })).toBeVisible();
+    await expect(page.locator('body')).not.toContainText(name); await expect(page.locator('body')).not.toContainText('browser-test-only-workspace-key-2026');
+    expect(await page.evaluate(() => caches.keys())).toEqual([]);
+    expect(await page.evaluate(() => fetch('/api/transfers').then(() => false, () => true))).toBe(true);
+    await page.screenshot({ path: info.outputPath('offline-private-mobile.png'), fullPage: true });
+  } finally { await context.setOffline(false); }
+  await page.getByRole('link', { name: '重新连接', exact: true }).click(); await expect(page.locator('#workspace')).toBeVisible();
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  const row = page.locator('.file').filter({ hasText: name }); await expect(row).toContainText('已校验完成');
+  const after = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(f => f.name === name), name);
+  expect(after).toHaveLength(1); expect(after[0].id).toBe(before.id); expect(after[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+  expect(await page.evaluate(() => caches.keys())).toEqual([]);
+  await page.getByText('安装到手机或电脑', { exact: true }).click(); await page.screenshot({ path: info.outputPath('install-guide.png'), fullPage: true });
+});
 test('verified browser upload, literal text preview and download', async ({ page }, info) => {
   const errors = []; page.on('pageerror', e => errors.push(e.message));
   const name = `roundtrip-${info.project.name}.txt`; const bytes = Buffer.from('你好 Mutual Transfer\n<script>literal, never execute</script>');

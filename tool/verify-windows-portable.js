@@ -71,6 +71,8 @@ try {
   let cookie = first.cookie;
   const call = (route, options = {}) => fetch(base + route, { ...options, signal: signal(), headers: { Cookie: cookie, ...options.headers } });
   const front = await call('/'); assert.equal(front.status, 200); assert.match(await front.text(), /Mutual Transfer/);
+  const webManifest = await call('/manifest.webmanifest'); assert.equal(webManifest.status, 200); assert.equal((await webManifest.json()).display, 'standalone');
+  for (const asset of ['/service-worker.js', '/install.js', '/app-icon.svg']) assert.equal((await call(asset)).status, 200);
   for (const name of ['sha2.js', '_md.js', '_u64.js', 'utils.js']) assert.equal((await call('/vendor/' + name)).status, 200);
   const bytes = randomBytes(4 * 1024 * 1024 + 65537); const sha = b => createHash('sha256').update(b).digest('hex');
   const created = await call('/api/transfers', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'packaged-resume.bin', size: bytes.length, expectedSha256: sha(bytes) }) });
