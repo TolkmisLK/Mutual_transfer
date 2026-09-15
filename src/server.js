@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { Store, TransferError, CHUNK } from './store.js';
 import { Pairings } from './pairing.js';
+import { acquireDataLease } from './data-lease.js';
 
 const publicRoot = fileURLToPath(new URL('../public/', import.meta.url));
 function localHosts() {
@@ -57,7 +58,9 @@ async function previewType(file) {
 }
 export async function createServer({ root, key, quota, tls, allowedHosts } = {}) {
   if (typeof key !== 'string' || key.length < 24) throw new Error('Workspace key must have at least 24 characters');
-  const store = await new Store(root, { quota }).init();
+  const lease = await acquireDataLease(root); let store;
+  try { store = await new Store(lease.root, { quota }).init(); }
+  catch (error) { await lease.release(); throw error; }
   const sessions = new Map(); const attempts = new Map(); const pairings = new Pairings(); let activeBodies = 0;
   function pruneSessions(now) { for (const [id, session] of sessions) if (session.expiresAt <= now) { sessions.delete(id); pairings.revoke(id); } }
   function issueSession(res, canPair) {
@@ -159,7 +162,27 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       json(res, e instanceof TransferError ? e.status : 500, { error: e instanceof TransferError ? e.message : 'Storage operation failed; check available disk space' });
     }
   }
-  const server = tls ? https.createServer({ ...tls, minVersion: 'TLSv1.2' }, handle) : http.createServer(handle);
+  const requests = new Set();
+  const dispatch = (req, res) => {
+    const pending = handle(req, res); requests.add(pending);
+    pending.finally(() => requests.delete(pending));
+  };
+  let server;
+  try { server = tls ? https.createServer({ ...tls, minVersion: 'TLSv1.2' }, dispatch) : http.createServer(dispatch); }
+  catch (error) { await lease.release(); throw error; }
+  let closing = false; let releasing;
+  const release = () => releasing ||= Promise.allSettled([...requests]).then(() => lease.release());
+  const originalClose = server.close.bind(server); const originalListen = server.listen.bind(server);
+  server.close = callback => {
+    closing = true;
+    return originalClose(error => { release().then(() => callback?.(error)); });
+  };
+  server.listen = (...args) => {
+    if (closing) throw new Error('Create a new service instance after closing this store');
+    try { return originalListen(...args); }
+    catch (error) { closing = true; void release(); throw error; }
+  };
+  server.on('error', () => { if (!server.listening) { closing = true; void release(); } });
   server.requestTimeout = 60000; server.headersTimeout = 15000; server.maxConnections = 64;
   return { server, store };
 }

@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Exclusive data ownership — candidate pending CI
+
+Added an OS IPC guard acquired before store recovery, plus real-process contention/forced-exit/recovery tests and startup-failure cleanup cases. Syntax checks pass locally. This sandbox rejects Linux abstract-socket binding with EPERM, so local service tests cannot execute with this guard; no bypass or fake success is used. Windows/Linux CI must validate the actual guard and the full existing service, browser, disk-full and portable package gates. See [DATA-OWNERSHIP.md](DATA-OWNERSHIP.md).
+
 ## Windows portable server — 2026-09-15 (Asia/Shanghai)
 
 [PR #6 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34898643333), candidate `bbe2fe618bab9d2781953af14f0572c611222928`: all five jobs passed, including the new actual Windows package/process harness, 25 tests on each platform, six browser scenarios and disk-full regression. Local 25 tests and syntax checks also passed.
