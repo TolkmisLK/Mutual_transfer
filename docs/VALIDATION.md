@@ -2,9 +2,13 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Installable Web and private offline fallback — candidate pending CI
+## Installable Web and private offline fallback — 2026-09-16 (Asia/Shanghai)
 
-Added a root-scoped Web App Manifest, icon, explicit browser installation prompt and a network-only service worker. Three new pure tests and syntax checks pass locally. The worker does not cache or intercept APIs/files; it returns only static reconnection instructions for failed exact-root navigation. The added real Chromium scenario waits for worker control, interrupts a 9 MiB upload, goes offline, checks no filename/credential/cache data appears, and reconnects/resumes the original transfer ID to an exact final hash. The Windows portable harness also checks the new packaged public assets. Actual CI browser/platform results are pending; no Android/iOS OS installation or background transfer claim is made. See [INSTALLABLE-WEB.md](INSTALLABLE-WEB.md).
+Added a root-scoped Web App Manifest, icon, explicit browser installation prompt and a network-only service worker. Three new pure tests and syntax checks pass locally. The worker does not cache or intercept APIs/files; it returns only static reconnection instructions for failed exact-root navigation.
+
+[PR #10 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35029120732), candidate `550859c99726005d789314d98b97afb90262e745`: all five jobs passed, including 32 tests on each platform, ten real Chromium scenarios in 22.5 seconds, real ENOSPC recovery and the Windows portable harness. The new desktop/mobile-viewport cases took 4.2/4.1 seconds: after worker control they interrupted a 9 MiB upload at 4 MiB, went offline, verified that the fallback contains no filename/credential and CacheStorage remains empty, then reconnected and resumed the original transfer ID to the exact final SHA-256. Offline API access failed rather than using cached private data.
+
+The Windows package verified 32 manifest files and served the four new public assets, while retaining the real CMD launcher and 4,259,841-byte restart/resume checks. Browser artifact `10420503327` was downloaded; the actual mobile-viewport private fallback and post-reconnection installation-guide screenshots were inspected. Main CI `35029389650` also passed after merge. These are browser viewport tests, not Android/iOS OS installation, physical Wi-Fi or background-transfer acceptance. See [INSTALLABLE-WEB.md](INSTALLABLE-WEB.md).
 
 ## Windows command launcher — 2026-09-15 (Asia/Shanghai)
 
