@@ -2,9 +2,11 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Paired-session revocation — candidate pending CI
+## Paired-session revocation — 2026-09-15 (Asia/Shanghai)
 
-Added explicit owner-confirmed global removal of paired sessions and unused codes. The new real HTTP regression checks two independent owner/guest pairs, guest/bearer/origin denial, preserved owner sessions/files, idempotence and re-pairing. Two viewport browser cases cover cancellation without a request, confirmation, rejected guest refresh, retained uploaded content and a new invitation. Local syntax checks are available; full service execution remains blocked by this sandbox's IPC EPERM, so CI execution is pending. See [PAIRING.md](PAIRING.md) for already-authorized request and retained-copy limits.
+[PR #8 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34925825285), candidate `083799329e1fb25815fa0f08dad58191cf51556e`: all five jobs passed. Ubuntu and Windows each passed 29 tests; eight browser cases passed in 13.9 seconds, with the two new revocation scenarios taking 892/894 ms. Existing portable-package and real ENOSPC gates also passed. The HTTP regression checks two independent owner/guest pairs, guest/bearer/origin denial, preserved owner sessions/files, idempotence and re-pairing. Browser cases cover cancellation without a request, confirmation, rejected guest refresh, retained uploaded content and a new invitation.
+
+The initial browser suite shared one service and exhausted the legitimate per-IP login budget across unrelated scenarios. Each scenario now creates its own real server and data directory; production rate limits and replay assertions remain unchanged. Artifact `10380102181` was downloaded and the actual owner mobile-viewport revocation screenshot inspected: controls wrap, retained file/checksum remain visible and the confirmation count is shown. Local syntax checks pass; local service execution still cannot bind this sandbox's required IPC guard. See [PAIRING.md](PAIRING.md) for already-authorized request and retained-copy limits.
 
 ## Exclusive data ownership — 2026-09-15 (Asia/Shanghai)
 
