@@ -65,7 +65,7 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
-Browser fixtures use `.browser-test-data` and a test-only workspace key. For repeat local runs, remove only that fixture directory after the test server stops, or use a fresh checkout. Never point tests at your real `data` directory.
+Browser fixtures now create an independent real server, ephemeral loopback port and temporary data directory for each scenario, using a test-only workspace key. Teardown closes that server and removes only its generated directory. Authentication rate limits are unchanged; scenarios cannot consume each other's login budgets. Never point tests at your real `data` directory.
 
 ## Real large-file loopback acceptance
 

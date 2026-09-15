@@ -1,6 +1,26 @@
-import { test, expect } from '@playwright/test';
+import { test as baseTest, expect } from '@playwright/test';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import { createServer } from '../src/server.js';
+
+// Give each scenario its own real server, rate-limit state and data directory.
+// Reusing a global service made unrelated login scenarios exhaust one IP budget.
+const test = baseTest.extend({
+  baseURL: async ({}, use) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mutual-browser-'));
+    let server;
+    try {
+      ({ server } = await createServer({ root, key: 'browser-test-only-workspace-key-2026' }));
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+      await use('http://127.0.0.1:' + server.address().port);
+    } finally {
+      if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  },
+});
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
