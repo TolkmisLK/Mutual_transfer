@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Paired-session revocation — candidate pending CI
+
+Added explicit owner-confirmed global removal of paired sessions and unused codes. The new real HTTP regression checks two independent owner/guest pairs, guest/bearer/origin denial, preserved owner sessions/files, idempotence and re-pairing. Two viewport browser cases cover cancellation without a request, confirmation, rejected guest refresh, retained uploaded content and a new invitation. Local syntax checks are available; full service execution remains blocked by this sandbox's IPC EPERM, so CI execution is pending. See [PAIRING.md](PAIRING.md) for already-authorized request and retained-copy limits.
+
 ## Exclusive data ownership — 2026-09-15 (Asia/Shanghai)
 
 [PR #7 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34922254993), candidate `00adfa3d07a2a1c789b140b847ea3511ffab8ab9`: all five jobs passed. Ubuntu and Windows each passed 28 tests, including actual OS ownership, path aliases, failed initialization cleanup and real child-process contention/forced-exit recovery (423/460 ms). The competing process was rejected before truncating a modeled live tail; killing only the fixture owner freed the guard, and a new process recovered the committed checkpoint. This is process-exit acceptance, not power-loss durability.
@@ -61,7 +65,7 @@ npx playwright install --with-deps chromium
 npm run test:browser
 ```
 
-Browser fixtures use `.browser-test-data` and a test-only workspace key. For repeat local runs, remove only that fixture directory after the test server stops, or use a fresh checkout. Never point tests at your real `data` directory.
+Browser fixtures now create an independent real server, ephemeral loopback port and temporary data directory for each scenario, using a test-only workspace key. Teardown closes that server and removes only its generated directory. Authentication rate limits are unchanged; scenarios cannot consume each other's login budgets. Never point tests at your real `data` directory.
 
 ## Real large-file loopback acceptance
 

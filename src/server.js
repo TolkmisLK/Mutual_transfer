@@ -109,6 +109,18 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
       pruneSessions(Date.now()); const session = sessions.get(cookie);
       if (!session && !equal(bearer, key)) throw new TransferError(401, 'Join the workspace first');
       if (req.method === 'GET' && route === '/api/session') { json(res, 200, { canPair: session?.canPair === true, expiresAt: session?.expiresAt ?? null }); return; }
+      if (route === '/api/paired-sessions') {
+        if (!session?.canPair) throw new TransferError(403, 'Sign in with the workspace key to manage paired sessions');
+        if (req.method !== 'DELETE') throw new TransferError(405, 'Method not allowed');
+        let revoked = 0;
+        // Any workspace-key login can remove guest access globally, without
+        // exposing bearer cookies or changing other owner logins.
+        for (const [id, value] of sessions) {
+          if (!value.canPair) { sessions.delete(id); revoked++; }
+          pairings.revoke(id);
+        }
+        json(res, 200, { revoked, unusedPairingsRevoked: true }); return;
+      }
       if (route === '/api/pairings') {
         // The long-lived key must first create a browser session. Paired
         // sessions cannot recursively invite devices, even via this API.

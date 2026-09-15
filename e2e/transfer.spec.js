@@ -1,6 +1,26 @@
-import { test, expect } from '@playwright/test';
+import { test as baseTest, expect } from '@playwright/test';
 import { promises as fs } from 'node:fs';
 import { createHash } from 'node:crypto';
+import os from 'node:os';
+import path from 'node:path';
+import { createServer } from '../src/server.js';
+
+// Give each scenario its own real server, rate-limit state and data directory.
+// Reusing a global service made unrelated login scenarios exhaust one IP budget.
+const test = baseTest.extend({
+  baseURL: async ({}, use) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mutual-browser-'));
+    let server;
+    try {
+      ({ server } = await createServer({ root, key: 'browser-test-only-workspace-key-2026' }));
+      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
+      await use('http://127.0.0.1:' + server.address().port);
+    } finally {
+      if (server) { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); }
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  },
+});
 
 test.beforeEach(async ({ page }) => {
   await page.goto('/');
@@ -70,4 +90,32 @@ test('a separate browser pairs once, transfers a file and cannot delegate access
     await page.evaluate(() => fetch('/api/pairings', { method: 'DELETE' })).catch(() => {});
     await guestContext.close();
   }
+});
+
+test('owner can cancel or confirm paired-session revocation and a new invitation restores access', async ({ page, browser }, info) => {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 } }); const guest = await context.newPage();
+  const join = async () => {
+    await page.getByRole('button', { name: '配对新设备', exact: true }).click();
+    await expect(page.locator('#issued-code')).toHaveText(/^[A-F0-9]{5}(?:-[A-F0-9]{5}){3}$/);
+    await guest.getByLabel('临时配对码', { exact: true }).fill(await page.locator('#issued-code').textContent());
+    await guest.getByRole('button', { name: '配对加入', exact: true }).click(); await expect(guest.locator('#workspace')).toBeVisible();
+    await page.getByRole('button', { name: '关闭并撤销未用配对码' }).click();
+  };
+  try {
+    await guest.goto(page.url()); await join();
+    await expect(guest.getByRole('button', { name: '撤销配对设备', exact: true })).toBeHidden();
+    const name = 'revocation-' + info.project.name + '.txt';
+    await guest.locator('#files').setInputFiles({ name, mimeType: 'text/plain', buffer: Buffer.from('保留已经上传的文件') });
+    await expect(guest.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+    let revocations = 0; page.on('request', req => { if (req.url().endsWith('/api/paired-sessions') && req.method() === 'DELETE') revocations++; });
+    page.once('dialog', dialog => dialog.dismiss()); await page.getByRole('button', { name: '撤销配对设备', exact: true }).click();
+    await guest.getByRole('button', { name: '刷新', exact: true }).click(); await expect(guest.locator('#workspace')).toBeVisible(); expect(revocations).toBe(0);
+    page.once('dialog', dialog => dialog.accept()); await page.getByRole('button', { name: '撤销配对设备', exact: true }).click();
+    await expect(page.locator('#status')).toContainText('个配对会话及全部未用配对码'); expect(revocations).toBe(1);
+    await guest.getByRole('button', { name: '刷新', exact: true }).click(); await expect(guest.locator('#workspace')).toBeHidden(); await expect(guest.locator('#join')).toBeVisible();
+    await page.getByRole('button', { name: '刷新', exact: true }).click(); await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath('revoked-paired-access.png'), fullPage: true });
+    await join(); await expect(guest.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+  } finally { await context.close(); }
 });

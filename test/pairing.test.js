@@ -69,3 +69,36 @@ test('pairing guesses share the bounded login rate limit', async t => {
     assert.equal(result.status, i < 12 ? 401 : 429);
   }
 });
+
+test('owner revokes all paired sessions and unused codes while preserving owner logins and files', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mutual-revoke-guests-'));
+  const key = 'generated-revocation-fixture-key-only'; const { server } = await createServer({ root, key });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(root, { recursive: true, force: true }); });
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const call = (route, method = 'GET', cookie, value, extra = {}) => fetch(base + route, { method, headers: { ...(cookie ? { Cookie: cookie } : {}), ...(value ? { 'Content-Type': 'application/json' } : {}), ...extra }, ...(value ? { body: JSON.stringify(value) } : {}) });
+  const login = async () => (await call('/api/session', 'POST', null, { key })).headers.get('set-cookie').split(';')[0];
+  const offer = async owner => (await (await call('/api/pairings', 'POST', owner)).json()).code;
+  const pair = async code => (await call('/api/pair', 'POST', null, { code })).headers.get('set-cookie').split(';')[0];
+  const owners = [await login(), await login()]; const guests = [await pair(await offer(owners[0])), await pair(await offer(owners[1]))];
+  const unused = [await offer(owners[0]), await offer(owners[1])];
+  const file = await (await call('/api/transfers', 'POST', guests[0], { name: 'kept-empty.txt', size: 0 })).json();
+  assert.equal((await call(`/api/transfers/${file.id}/finish`, 'POST', guests[0])).status, 200);
+  assert.equal((await call('/api/paired-sessions', 'DELETE')).status, 401);
+  assert.equal((await call('/api/paired-sessions', 'DELETE', guests[0])).status, 403);
+  assert.equal((await call('/api/paired-sessions', 'DELETE', null, null, { Authorization: 'Bearer ' + key })).status, 403);
+  assert.equal((await call('/api/paired-sessions', 'DELETE', owners[0], null, { Origin: 'https://evil.example' })).status, 403);
+  assert.equal((await call('/api/paired-sessions', 'GET', owners[0])).status, 405);
+  assert.equal((await call('/api/transfers', 'GET', guests[0])).status, 200);
+  const revoked = await call('/api/paired-sessions', 'DELETE', owners[0]);
+  assert.deepEqual(await revoked.json(), { revoked: 2, unusedPairingsRevoked: true });
+  assert.equal(revoked.headers.get('cache-control'), 'no-store');
+  for (const guest of guests) {
+    for (const [route, method] of [['/api/session', 'GET'], ['/api/transfers', 'POST'], [`/api/transfers/${file.id}/download`, 'GET'], [`/api/transfers/${file.id}`, 'DELETE']]) assert.equal((await call(route, method, guest)).status, 401);
+  }
+  for (const code of unused) assert.equal((await call('/api/pair', 'POST', null, { code })).status, 401);
+  for (const owner of owners) assert.equal((await call(`/api/transfers/${file.id}/download`, 'GET', owner)).status, 200);
+  assert.deepEqual(await (await call('/api/paired-sessions', 'DELETE', owners[1])).json(), { revoked: 0, unusedPairingsRevoked: true });
+  const renewed = await pair(await offer(owners[1]));
+  assert.equal((await call(`/api/transfers/${file.id}/download`, 'GET', renewed)).status, 200);
+});
