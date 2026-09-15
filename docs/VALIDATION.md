@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Windows command launcher — candidate pending CI
+
+The portable harness now also invokes the packaged START-WINDOWS.cmd through the system command interpreter from a different working directory, with the bundle in a path containing spaces. It checks preserved file access, clearing of inherited Node startup options, normal stdin stop and a deliberately invalid configuration returning exit code 1 through the batch wrapper. This candidate is pending real Windows execution; syntax alone does not establish it passed. Browser association and Explorer double-click remain separate consumer-machine checks.
+
 ## Paired-session revocation — 2026-09-15 (Asia/Shanghai)
 
 [PR #8 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34925825285), candidate `083799329e1fb25815fa0f08dad58191cf51556e`: all five jobs passed. Ubuntu and Windows each passed 29 tests; eight browser cases passed in 13.9 seconds, with the two new revocation scenarios taking 892/894 ms. Existing portable-package and real ENOSPC gates also passed. The HTTP regression checks two independent owner/guest pairs, guest/bearer/origin denial, preserved owner sessions/files, idempotence and re-pairing. Browser cases cover cancellation without a request, confirmation, rejected guest refresh, retained uploaded content and a new invitation.
