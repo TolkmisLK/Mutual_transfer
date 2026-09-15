@@ -35,16 +35,24 @@ const fixture = await fs.mkdtemp(path.join(os.tmpdir(), 'mutual-portable-accepta
 let child; let exit; let output = ''; let code; let base;
 const marker = path.join(fixture, 'operator-file.txt'); await fs.writeFile(marker, 'must not change');
 const signal = () => AbortSignal.timeout(15000);
-async function start() {
+const command = path.join(process.env.SystemRoot, 'System32', 'cmd.exe');
+const commandArgs = ['/d', '/s', '/c', '""' + path.join(bundle, 'START-WINDOWS.cmd') + '""'];
+function terminateFixture(childProcess) {
+  // Only the exact process tree created by this harness, never image-name kill.
+  try { execFileSync(path.join(process.env.SystemRoot, 'System32', 'taskkill.exe'), ['/PID', String(childProcess.pid), '/T', '/F'], { stdio: 'ignore', timeout: 10000 }); }
+  catch { childProcess.kill(); }
+}
+async function start(viaCommand = false) {
   const reserve = createServer(); await new Promise(resolve => reserve.listen(0, '127.0.0.1', resolve));
   const port = reserve.address().port; await new Promise(resolve => reserve.close(resolve));
   output = ''; code = undefined; base = 'http://127.0.0.1:' + port;
   const env = { ...process.env, NODE_OPTIONS: '', NODE_PATH: '', LOCALAPPDATA: fixture, HOST: '127.0.0.1', PORT: String(port), MUTUAL_NO_OPEN: '1' };
   for (const name of ['DATA_DIR', 'MUTUAL_KEY', 'TLS_CERT', 'TLS_KEY', 'ALLOWED_HOSTS', 'MUTUAL_ALLOW_HTTP']) delete env[name];
-  child = spawn(runtime, [path.join(bundle, 'tool', 'portable-launch.js')], { cwd: fixture, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
+  if (viaCommand) { env.NODE_OPTIONS = '--require "' + path.join(fixture, 'nonexistent-preload.cjs') + '"'; env.NODE_PATH = path.join(fixture, 'nonexistent-modules'); }
+  child = spawn(viaCommand ? command : runtime, viaCommand ? commandArgs : [path.join(bundle, 'tool', 'portable-launch.js')], { cwd: fixture, env, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, windowsVerbatimArguments: viaCommand });
   exit = new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', (value, terminatedBy) => { code = value; resolve({ code: value, terminatedBy }); }); });
   // Never print captured stdout: it includes the generated fixture access key.
-  for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output += bytes; if (output.length > 65536) child.kill(); });
+  for (const stream of [child.stdout, child.stderr]) stream.on('data', bytes => { output += bytes; if (output.length > 65536) terminateFixture(child); });
   const deadline = Date.now() + 20000;
   while (!output.includes('Type stop') && code === undefined && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
   assert.ok(output.includes('Type stop'), 'packaged process reached ready state');
@@ -54,7 +62,7 @@ async function start() {
 }
 async function stop() {
   if (!child) return; const old = child; child = null; old.stdin.end('stop\n');
-  const timer = setTimeout(() => old.kill(), 10000);
+  const timer = setTimeout(() => terminateFixture(old), 10000);
   try { const result = await exit; assert.equal(result.code, 0); assert.equal(result.terminatedBy, null); }
   finally { clearTimeout(timer); }
 }
@@ -75,13 +83,26 @@ try {
   assert.equal((await chunk(resumed.offset, bytes.subarray(resumed.offset))).status, 200);
   const finished = await (await call(route + '/finish', { method: 'POST' })).json(); assert.equal(finished.integrityVerified, true); assert.equal(finished.sha256, sha(bytes));
   const downloaded = await call(route + '/download'); assert.equal(downloaded.status, 200); assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()), bytes);
-  await stop(); assert.equal(await fs.readFile(marker, 'utf8'), 'must not change');
+  await stop();
+  const commandLogin = await start(true); cookie = commandLogin.cookie;
+  assert.deepEqual(Buffer.from(await (await call(route + '/download')).arrayBuffer()), bytes);
+  await stop();
+  const failure = spawn(command, commandArgs, { cwd: fixture, env: { ...process.env, NODE_OPTIONS: '', NODE_PATH: '', LOCALAPPDATA: fixture, PORT: '0', MUTUAL_NO_OPEN: '1' }, stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true, windowsVerbatimArguments: true });
+  let failureOutput = ''; for (const stream of [failure.stdout, failure.stderr]) stream.on('data', bytes => { failureOutput += bytes; });
+  failure.stdin.end('\n'); // Acknowledge pause without changing a consumer setting.
+  const timer = setTimeout(() => terminateFixture(failure), 15000);
+  try {
+    const failureExit = await new Promise((resolve, reject) => { failure.once('error', reject); failure.once('exit', (code, signal) => resolve({ code, signal })); });
+    assert.equal(failureExit.signal, null); assert.equal(failureExit.code, 1); assert.match(failureOutput, /PORT must be/);
+  } finally { clearTimeout(timer); }
+  assert.equal(await fs.readFile(marker, 'utf8'), 'must not change');
   assert.equal((await fs.stat(path.join(fixture, 'MutualTransfer', 'data', item.id + '.data'))).size, bytes.length);
   await assert.rejects(fs.stat(path.join(bundle, 'data')), { code: 'ENOENT' });
   console.log(JSON.stringify({ platform: process.platform, runtimeVersion: identity.version, runtimeArch: identity.arch, manifestFilesVerified: Object.keys(manifest).length,
     actualPackagedProcess: true, defaultUserDataIsolated: true, bytes: bytes.length, restartedResumeAndHashMatch: true, previousSessionInvalidated: true, normalStdinExit: true,
+    commandLauncherTested: true, inheritedNodeOptionsCleared: true, commandFailureExitPreserved: true,
     browserAutoOpenTested: false, cleanMachineTested: false, physicalLanTested: false }));
 } finally {
-  if (child) { child.kill(); await exit.catch(() => {}); }
+  if (child) { terminateFixture(child); await exit.catch(() => {}); }
   await fs.rm(fixture, { recursive: true, force: true });
 }
