@@ -8,7 +8,11 @@ Pairing does **not** establish certificate trust. Use a trusted certificate matc
 
 All admitted members can upload, read and delete **all files** in the shared space. This is not per-user isolation or a read-only invitation. Only sessions authenticated with the long-lived workspace key can create/revoke pairing codes; paired sessions cannot invite additional devices. A bearer workspace key must first create a login session to manage pairing.
 
-Closing the pairing dialog revokes **all unused codes issued by that login session**. Logging out or expiring that issuer session also prevents unused codes from being redeemed. Already redeemed sessions remain valid until they log out, reach their one-hour expiry, or the server restarts. Revoking unused codes is not remote logout. Restart invalidates all sessions/codes but does not delete transferred files. Keep the workspace key private; rotating configuration and restarting is required if it is compromised. Device-by-device remote session revocation remains future work.
+Closing the pairing dialog revokes **all unused codes issued by that login session**. Logging out or expiring that issuer session also prevents unused codes from being redeemed. This alone does not log out already paired devices.
+
+For remote removal, a workspace-key login can select **撤销配对设备** and confirm. This revokes **all paired sessions across the workspace**, including invitations issued by other owner logins, and **all unused pairing codes**. Owner logins and stored files remain intact. Affected guests receive 401 on their next request and need a newly generated invitation; a refresh returns the browser to the join form. The server returns only the revoked count, never session cookies or secrets. A cancelled confirmation sends no revocation request. Individual-device selection is not implemented.
+
+Revocation rejects requests authenticated afterward. A request already authorized, including an active download or chunk being committed, may finish; it cannot erase files already downloaded or previews already held in memory. Subsequent chunks and requests fail. There is no push notification or claim of immediate remote screen clearing. Sessions also end on logout, one-hour expiry or server restart. Restart invalidates all sessions/codes but does not delete transferred files. Keep the workspace key private; rotating configuration and restarting is required if it is compromised, since revoking guests does not revoke the master key or owner logins.
 
 ## Implementation and verification
 

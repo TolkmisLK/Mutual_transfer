@@ -35,6 +35,7 @@ async function refresh() {
   const session = await api('/api/session');
   const { files } = await api('/api/transfers'); $('join').hidden = true; $('workspace').hidden = false;
   $('new-pairing').hidden = !session.canPair;
+  $('revoke-guests').hidden = !session.canPair;
   $('list').replaceChildren();
   if (!files.length) { const empty = document.createElement('p'); empty.textContent = '还没有文件。上传后，另一台设备刷新即可看到。'; $('list').append(empty); }
   for (const file of files.sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
@@ -80,6 +81,15 @@ async function revokePairing() {
   finally { button.disabled = false; }
 }
 $('revoke-pairing').onclick = revokePairing;
+$('revoke-guests').onclick = async () => {
+  if (!confirm('撤销全部已配对设备和未用配对码？这些设备的后续请求将被拒绝，已经开始的请求可能完成。使用访问密钥登录的设备会保留。')) return;
+  const button = $('revoke-guests'); button.disabled = true;
+  try {
+    const result = await api('/api/paired-sessions', { method: 'DELETE' }); clearPairing();
+    say(`已撤销 ${result.revoked} 个配对会话及全部未用配对码。需要重新生成配对码才能加入。`);
+  } catch (error) { say('撤销未确认：' + error.message); }
+  finally { button.disabled = false; }
+};
 $('pairing-dialog').addEventListener('cancel', e => { e.preventDefault(); revokePairing(); });
 $('refresh').onclick = () => refresh().catch(e => say(e.message));
 $('logout').onclick = async () => {
