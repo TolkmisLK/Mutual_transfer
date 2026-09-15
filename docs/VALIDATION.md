@@ -2,9 +2,9 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Windows command launcher — candidate pending CI
+## Windows command launcher — 2026-09-15 (Asia/Shanghai)
 
-The portable harness now also invokes the packaged START-WINDOWS.cmd through the system command interpreter from a different working directory, with the bundle in a path containing spaces. It checks preserved file access, clearing of inherited Node startup options, normal stdin stop and a deliberately invalid configuration returning exit code 1 through the batch wrapper. This candidate is pending real Windows execution; syntax alone does not establish it passed. Browser association and Explorer double-click remain separate consumer-machine checks.
+[PR #9 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34926656324), candidate `b5b50e7e9e9f775d97a37df31564cfe0dce3a464`: all five jobs passed. The Windows portable harness invoked the packaged START-WINDOWS.cmd through the real system command interpreter from a different working directory, with the bundle in a path containing spaces. It verified preserved file access, removal of inherited Node startup options, normal stdin stop and a deliberately invalid PORT returning exit code 1 through the batch pause. JSON flags commandLauncherTested, inheritedNodeOptionsCleared and commandFailureExitPreserved were all true; the existing 4,259,841-byte restart/resume and 28-file manifest checks also passed. Browser association and Explorer double-click remain separate consumer-machine checks; this was CI command execution, not a desktop click.
 
 ## Paired-session revocation — 2026-09-15 (Asia/Shanghai)
 

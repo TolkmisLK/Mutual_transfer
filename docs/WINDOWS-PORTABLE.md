@@ -1,5 +1,7 @@
 # Windows portable server preview
 
+The packaged command entry is exercised by Windows CI, including space-containing paths, normal stop and failure exit codes. This does not yet establish Explorer double-click behavior or the user's default browser association; see [VALIDATION.md](VALIDATION.md).
+
 The portable ZIP bundles a pinned official Windows x64 Node runtime, application files and the browser hashing modules/licenses. You do not need to install Node or run npm on the destination computer. It is a **console-managed server with a browser UI**, not an Electron/Flutter native desktop client or a signed installer. Windows/Android/iOS native clients and physical-device acceptance are still separate launch gates.
 
 1. Obtain the ZIP and matching `.sha256` from the same successful CI artifact. In PowerShell use `Get-FileHash path-to.zip -Algorithm SHA256` and compare the result to the checksum before extracting.
