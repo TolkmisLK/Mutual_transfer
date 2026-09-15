@@ -6,6 +6,8 @@
 
 Windows 免安装服务包已通过 CI 中真实打包进程的上传、正常停止、重启续传和下载校验，包含固定版本 Node 运行时、双击启动入口和独立用户数据目录；它使用浏览器界面，不是原生桌面客户端，尚未完成消费者干净机验收。下载构建产物和具体边界见 [Windows portable 说明](docs/WINDOWS-PORTABLE.md)。
 
+客户端提供「安装到手机或电脑」说明与浏览器安装入口，需使用受信任的 HTTPS。断网时只显示重连指南，不离线缓存文件或登录信息；重新连接、重新选择原文件可以续传。这是可安装网页，不是原生手机安装包，实际手机安装和后台传输仍需验收。见 [安装与离线边界](docs/INSTALLABLE-WEB.md)。
+
 ## 运行
 
 安装 Node.js 22 或更新版本，下载源码，在目录中运行：
@@ -63,6 +65,6 @@ npm test
 npm run check
 ```
 
-21 项测试已通过 Linux 和 Windows CI，包括真实 HTTPS 证书信任/主机名校验、加密上传下载和会话退出；4 项 Chromium 真实浏览器测试通过，覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输、服务重建续传与下载哈希验证已通过；这不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。独立 Linux 临时文件系统实际写满后的断点保留、失败回滚与哈希一致续传也已通过。证据与复现命令见 [VALIDATION.md](docs/VALIDATION.md)，完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
+已记录的 Linux/Windows 测试覆盖真实 TLS 校验、配对撤销、独占数据目录、分块上传下载与重启恢复；真实浏览器测试覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输和下载哈希验证、Linux 临时文件系统实际写满后的安全恢复也已通过。各版本的准确测试数量与新功能候选状态见 [VALIDATION.md](docs/VALIDATION.md)；这些不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
 
 技术参考：[Node.js HTTP](https://nodejs.org/api/http.html)、[Node.js 文件流](https://nodejs.org/api/fs.html)、[浏览器 File API](https://developer.mozilla.org/en-US/docs/Web/API/File_API)。

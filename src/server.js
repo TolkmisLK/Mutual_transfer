@@ -85,9 +85,10 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
         res.setHeader('Content-Type', 'text/javascript; charset=utf-8');
         res.end(await fs.readFile(new URL(`../node_modules/@noble/hashes/${route.slice('/vendor/'.length)}`, import.meta.url))); return;
       }
-      if (req.method === 'GET' && ['/', '/app.js', '/integrity.js', '/style.css'].includes(route)) {
+      if (req.method === 'GET' && ['/', '/app.js', '/integrity.js', '/style.css', '/install.js', '/service-worker.js', '/manifest.webmanifest', '/app-icon.svg'].includes(route)) {
         const file = route === '/' ? 'index.html' : route.slice(1);
-        res.setHeader('Content-Type', file.endsWith('.js') ? 'text/javascript; charset=utf-8' : file.endsWith('.css') ? 'text/css; charset=utf-8' : 'text/html; charset=utf-8');
+        const types = { '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml', '.html': 'text/html; charset=utf-8' };
+        res.setHeader('Content-Type', types[path.extname(file)]);
         res.end(await fs.readFile(path.join(publicRoot, file))); return;
       }
       if (req.method === 'POST' && ['/api/session', '/api/pair'].includes(route)) {

@@ -2,6 +2,10 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
+## Installable Web and private offline fallback — candidate pending CI
+
+Added a root-scoped Web App Manifest, icon, explicit browser installation prompt and a network-only service worker. Three new pure tests and syntax checks pass locally. The worker does not cache or intercept APIs/files; it returns only static reconnection instructions for failed exact-root navigation. The added real Chromium scenario waits for worker control, interrupts a 9 MiB upload, goes offline, checks no filename/credential/cache data appears, and reconnects/resumes the original transfer ID to an exact final hash. The Windows portable harness also checks the new packaged public assets. Actual CI browser/platform results are pending; no Android/iOS OS installation or background transfer claim is made. See [INSTALLABLE-WEB.md](INSTALLABLE-WEB.md).
+
 ## Windows command launcher — 2026-09-15 (Asia/Shanghai)
 
 [PR #9 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34926656324), candidate `b5b50e7e9e9f775d97a37df31564cfe0dce3a464`: all five jobs passed. The Windows portable harness invoked the packaged START-WINDOWS.cmd through the real system command interpreter from a different working directory, with the bundle in a path containing spaces. It verified preserved file access, removal of inherited Node startup options, normal stdin stop and a deliberately invalid PORT returning exit code 1 through the batch pause. JSON flags commandLauncherTested, inheritedNodeOptionsCleared and commandFailureExitPreserved were all true; the existing 4,259,841-byte restart/resume and 28-file manifest checks also passed. Browser association and Explorer double-click remain separate consumer-machine checks; this was CI command execution, not a desktop click.

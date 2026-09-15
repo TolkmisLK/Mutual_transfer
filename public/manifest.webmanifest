@@ -1,0 +1,13 @@
+{
+  "id": "/",
+  "name": "Mutual Transfer",
+  "short_name": "Mutual Transfer",
+  "description": "局域网共享文件空间，支持分块校验与断点续传。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f8fb",
+  "theme_color": "#185e8f",
+  "icons": [{ "src": "/app-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
