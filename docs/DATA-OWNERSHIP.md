@@ -1,0 +1,13 @@
+# One process per local data directory
+
+Startup recovery truncates uncommitted tails to the last durable checkpoint. Running two service processes on one directory could otherwise truncate a live upload or overwrite metadata, even when they use different HTTP ports. `createServer` now acquires a local OS ownership guard **before** initializing the store. Symlink/junction aliases resolve to the same canonical directory; Windows paths are also case-normalized. Failure to acquire the guard stops startup rather than recovering or deleting anything in that store.
+
+The guard uses a Windows named pipe or a Linux abstract Unix socket, identified by the SHA-256 of the canonical path. It transports no files, keys or control commands; incoming connections are immediately closed. The OS removes these endpoints after process exit, including forced termination. Graceful shutdown waits for HTTP request handlers and pending store writes before releasing the guard. A closed service object cannot be restarted: create a new instance so ownership is reacquired. Initialization failures release the guard.
+
+On other Unix platforms a filesystem Unix socket under `/tmp` is used. A crash can leave that socket behind and future startup will fail closed. The application never guesses a PID, kills another process or automatically deletes a potentially live socket. Recovery there requires an operator to establish that no instance uses the directory before removing the exact stale socket. macOS crash recovery is not claimed as validated.
+
+This is a same-machine, cooperating-process guard, not a distributed lock or hostile-local-user security boundary. **Do not share DATA_DIR across machines, containers with separate IPC namespaces, network filesystems, old unguarded service versions or external programs that write the files.** OS/disk protection and independent backups are still required. A local process can intentionally occupy an endpoint to deny startup; denial is safer than concurrently modifying a store. If an environment prohibits the required local IPC operation, startup reports failure instead of silently dropping the guard.
+
+The regression harness starts real child service processes: a competitor must be rejected before touching a modeled uncommitted tail; after forcibly terminating only the fixture owner, a new process must acquire ownership and truncate that tail to the committed checkpoint. This verifies process-exit cleanup and restart semantics, not power-loss durability or interruption during a particular kernel write. See [VALIDATION.md](VALIDATION.md) for actual execution results.
+
+Primary platform reference: [Node.js IPC paths and lifecycle](https://nodejs.org/api/net.html#ipc-support).
