@@ -2,9 +2,13 @@
 
 Development preview, not a native-app or physical-device release acceptance.
 
-## Windows portable server — candidate pending CI
+## Windows portable server — 2026-09-15 (Asia/Shanghai)
 
-The packaging slice pins official Node 24.21.0 Windows x64 and its published ZIP SHA-256, assembles only allowlisted application/vendor/license files, and emits per-file and ZIP checksums. The acceptance harness will extract the archive and launch its own bundled node.exe from a path containing spaces, exercise login/upload/normal stop/restart/resume/download and old-cookie invalidation, and verify data remains outside the program folder. Local portable configuration unit tests pass (25 total tests); no Windows packaging/process execution is claimed until CI succeeds. Browser auto-open, .cmd double-click, clean-consumer machine and physical-LAN use are outside that harness.
+[PR #6 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/34898643333), candidate `bbe2fe618bab9d2781953af14f0572c611222928`: all five jobs passed, including the new actual Windows package/process harness, 25 tests on each platform, six browser scenarios and disk-full regression. Local 25 tests and syntax checks also passed.
+
+The Windows x64 bundle pins Node 24.21.0 with its official published ZIP checksum. The job verified the produced ZIP, extracted to a path containing spaces, checked 23 manifest files and no extra payload, and confirmed the executed runtime's absolute path/version/architecture. The real packaged process logged in, uploaded a 4 MiB first block, exited normally on stdin `stop`, restarted with a new workspace key and invalidated the old cookie, resumed 65,537 remaining bytes and downloaded all 4,259,841 bytes with an identical SHA-256. Data lived under an isolated LOCALAPPDATA fixture, outside the bundle; an unrelated marker stayed unchanged. No system Node executable was used for the service child process.
+
+Artifact `10370215703` contains the portable ZIP, its SHA-256 and `windows-portable-validation.json`. The JSON explicitly marks browser auto-open, clean-machine and physical-LAN checks false. This is a console-managed server with browser UI, not a native desktop/mobile GUI or signed release. The .cmd double-click/browser association still requires consumer-machine acceptance. See [WINDOWS-PORTABLE.md](WINDOWS-PORTABLE.md).
 
 ## Temporary pairing — 2026-09-15 (Asia/Shanghai)
 
