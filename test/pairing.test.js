@@ -88,7 +88,7 @@ test('owner revokes all paired sessions and unused codes while preserving owner 
   assert.equal((await call('/api/paired-sessions', 'DELETE', guests[0])).status, 403);
   assert.equal((await call('/api/paired-sessions', 'DELETE', null, null, { Authorization: 'Bearer ' + key })).status, 403);
   assert.equal((await call('/api/paired-sessions', 'DELETE', owners[0], null, { Origin: 'https://evil.example' })).status, 403);
-  assert.equal((await call('/api/paired-sessions', 'GET', owners[0])).status, 405);
+  assert.equal((await call('/api/paired-sessions', 'GET', owners[0])).status, 200);
   assert.equal((await call('/api/transfers', 'GET', guests[0])).status, 200);
   const revoked = await call('/api/paired-sessions', 'DELETE', owners[0]);
   assert.deepEqual(await revoked.json(), { revoked: 2, unusedPairingsRevoked: true });
@@ -101,4 +101,51 @@ test('owner revokes all paired sessions and unused codes while preserving owner 
   assert.deepEqual(await (await call('/api/paired-sessions', 'DELETE', owners[1])).json(), { revoked: 0, unusedPairingsRevoked: true });
   const renewed = await pair(await offer(owners[1]));
   assert.equal((await call(`/api/transfers/${file.id}/download`, 'GET', renewed)).status, 200);
+});
+
+test('individual paired-session management exposes no bearer secrets and preserves other sessions and unused codes', async t => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'mutual-one-guest-'));
+  const key = 'generated-selective-revocation-fixture-key'; const { server } = await createServer({ root, key });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); await fs.rm(root, { recursive: true, force: true }); });
+  const base = 'http://127.0.0.1:' + server.address().port;
+  const call = (route, method = 'GET', cookie, value, extra = {}) => fetch(base + route, { method, headers: { ...(cookie ? { Cookie: cookie } : {}), ...(value ? { 'Content-Type': 'application/json' } : {}), ...extra }, ...(value ? { body: JSON.stringify(value) } : {}) });
+  const login = async () => (await call('/api/session', 'POST', null, { key })).headers.get('set-cookie').split(';')[0];
+  const offer = async owner => (await (await call('/api/pairings', 'POST', owner)).json()).code;
+  const owner = await login(); const otherOwner = await login(); const code = await offer(owner);
+  for (const name of [42, 'x'.repeat(41), 'bad\nname']) assert.equal((await call('/api/pair', 'POST', null, { code, name })).status, 400);
+  const pair = async (code, name) => {
+    const result = await call('/api/pair', 'POST', null, { code, name }); assert.equal(result.status, 200);
+    return { cookie: result.headers.get('set-cookie').split(';')[0], info: await result.json() };
+  };
+  const first = await pair(code, '<script>literal</script>'); const second = await pair(await offer(otherOwner), 'Other phone'); const unused = await offer(owner);
+  const list = await call('/api/paired-sessions', 'GET', owner); assert.equal(list.headers.get('cache-control'), 'no-store');
+  const listed = await list.json(); assert.equal(listed.sessions.length, 2);
+  for (const entry of listed.sessions) {
+    assert.deepEqual(Object.keys(entry).sort(), ['createdAt', 'expiresAt', 'managementId', 'name']);
+    assert.match(entry.managementId, /^[a-f0-9]{32}$/); assert.equal(entry.expiresAt - entry.createdAt, 3600000);
+    assert.equal((await call('/api/transfers', 'GET', 'mutual_session=' + entry.managementId)).status, 401);
+  }
+  for (const secret of [key, first.cookie.split('=')[1], second.cookie.split('=')[1], unused]) assert.equal(JSON.stringify(listed).includes(secret), false);
+  assert.equal(listed.sessions[0].name, '<script>literal</script>');
+  const target = '/api/paired-sessions/' + first.info.managementId;
+  for (const [route, method] of [['/api/paired-sessions', 'GET'], [target, 'DELETE']]) {
+    assert.equal((await call(route, method)).status, 401);
+    assert.equal((await call(route, method, first.cookie)).status, 403);
+    assert.equal((await call(route, method, null, null, { Authorization: 'Bearer ' + key })).status, 403);
+    assert.equal((await call(route, method, owner, null, { Origin: 'https://evil.example' })).status, 403);
+  }
+  assert.equal((await call('/api/paired-sessions/not-an-id', 'DELETE', owner)).status, 400);
+  assert.equal((await call(target, 'POST', owner)).status, 405);
+  const file = await (await call('/api/transfers', 'POST', first.cookie, { name: 'retained.txt', size: 0 })).json();
+  assert.equal((await call(`/api/transfers/${file.id}/finish`, 'POST', first.cookie)).status, 200);
+  assert.deepEqual(await (await call(target, 'DELETE', otherOwner)).json(), { revoked: true });
+  assert.deepEqual(await (await call(target, 'DELETE', owner)).json(), { revoked: false });
+  for (const [route, method] of [['/api/transfers', 'GET'], ['/api/transfers', 'POST'], [`/api/transfers/${file.id}/download`, 'GET'], [`/api/transfers/${file.id}`, 'DELETE']]) assert.equal((await call(route, method, first.cookie)).status, 401);
+  for (const cookie of [owner, otherOwner, second.cookie]) assert.equal((await call(`/api/transfers/${file.id}/download`, 'GET', cookie)).status, 200);
+  assert.equal((await call('/api/paired-sessions', 'GET', owner).then(r => r.json())).sessions.length, 1);
+  await pair(unused, 'Still invited');
+  await call('/api/session', 'DELETE', second.cookie);
+  const remaining = (await (await call('/api/paired-sessions', 'GET', owner)).json()).sessions;
+  assert.deepEqual(remaining.map(entry => entry.name), ['Still invited']);
 });

@@ -1,5 +1,9 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
+## Selective paired-session management — candidate pending CI
+
+Added owner-only listing and individual revocation with independent management IDs, optional untrusted device names, confirmation/retry and stale-dialog guards. Local syntax checks pass and Playwright discovers 12 scenarios. Local real-service tests remain blocked by abstract Unix socket EPERM in the data ownership guard; the guard is unchanged. New HTTP/browser scenarios and the existing Linux/Windows, disk-full and portable-package gates must pass remotely before acceptance.
+
 Development preview, not a native-app or physical-device release acceptance.
 
 ## Installable Web and private offline fallback — 2026-09-16 (Asia/Shanghai)

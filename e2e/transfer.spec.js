@@ -147,3 +147,46 @@ test('owner can cancel or confirm paired-session revocation and a new invitation
     await join(); await expect(guest.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
   } finally { await context.close(); }
 });
+
+test('owner lists and selectively revokes a named browser session while another guest retains verified files', async ({ page, browser }, info) => {
+  const contexts = [await browser.newContext(), await browser.newContext()]; const guests = await Promise.all(contexts.map(context => context.newPage()));
+  const names = ['<img src=x onerror=alert(1)>', '保留的手机'];
+  try {
+    for (let i = 0; i < guests.length; i++) {
+      await page.getByRole('button', { name: '配对新设备', exact: true }).click();
+      await expect(page.locator('#issued-code')).toHaveText(/^[A-F0-9]{5}(?:-[A-F0-9]{5}){3}$/);
+      await guests[i].goto(page.url()); await guests[i].getByLabel('设备名称（可选）', { exact: true }).fill(names[i]);
+      await guests[i].getByLabel('临时配对码', { exact: true }).fill(await page.locator('#issued-code').textContent());
+      await guests[i].getByRole('button', { name: '配对加入', exact: true }).click(); await expect(guests[i].locator('#workspace')).toBeVisible();
+      await expect(guests[i].locator('#paired-identity')).toContainText(names[i]);
+      await expect(guests[i].getByRole('button', { name: '管理配对设备', exact: true })).toBeHidden();
+      await page.getByRole('button', { name: '关闭并撤销未用配对码' }).click();
+    }
+    const name = 'selective-' + info.project.name + '.txt'; const bytes = Buffer.from('单独撤销后其他设备仍能下载');
+    await guests[0].locator('#files').setInputFiles({ name, mimeType: 'text/plain', buffer: bytes });
+    await expect(guests[0].locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+    await page.getByRole('button', { name: '管理配对设备', exact: true }).click();
+    await expect(page.locator('.paired-session')).toHaveCount(2); const first = page.locator('.paired-session').filter({ hasText: names[0] });
+    await expect(first.locator('img')).toHaveCount(0);
+    let requests = 0; page.on('request', request => { if (request.url().includes('/api/paired-sessions/') && request.method() === 'DELETE') requests++; });
+    page.once('dialog', dialog => dialog.dismiss()); await first.getByRole('button', { name: '撤销此会话' }).click(); expect(requests).toBe(0);
+    await page.route('**/api/paired-sessions/*', route => route.abort('failed'));
+    page.once('dialog', dialog => dialog.accept()); await first.getByRole('button', { name: '撤销此会话' }).click();
+    await expect(page.locator('#paired-error')).toContainText('撤销未确认'); await expect(page.locator('.paired-session')).toHaveCount(2);
+    await page.unroute('**/api/paired-sessions/*');
+    await page.getByRole('button', { name: '刷新列表', exact: true }).click(); await expect(page.locator('#paired-error')).toHaveText('');
+    page.once('dialog', dialog => dialog.accept()); await first.getByRole('button', { name: '撤销此会话' }).click();
+    await expect(page.locator('.paired-session')).toHaveCount(1); await expect(page.locator('.paired-session')).toContainText(names[1]);
+    await guests[0].getByRole('button', { name: '刷新', exact: true }).click(); await expect(guests[0].locator('#workspace')).toBeHidden();
+    await guests[1].getByRole('button', { name: '刷新', exact: true }).click();
+    const row = guests[1].locator('.file').filter({ hasText: name }); await expect(row).toContainText(createHash('sha256').update(bytes).digest('hex'));
+    const download = guests[1].waitForEvent('download'); await row.getByRole('link', { name: '下载', exact: true }).click(); expect(await fs.readFile(await (await download).path())).toEqual(bytes);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: info.outputPath('paired-session-manager.png'), fullPage: true });
+    await page.getByRole('button', { name: '关闭列表', exact: true }).click();
+    let release; await page.route('**/api/paired-sessions', async route => { await new Promise(resolve => { release = resolve; }); await route.continue(); });
+    await page.getByRole('button', { name: '管理配对设备', exact: true }).click(); await expect.poll(() => Boolean(release)).toBe(true);
+    await page.getByRole('button', { name: '关闭列表', exact: true }).click(); release(); await page.unroute('**/api/paired-sessions');
+    await expect(page.locator('#paired-dialog')).not.toBeVisible(); await expect(page.locator('.paired-session')).toHaveCount(0);
+  } finally { await Promise.all(contexts.map(context => context.close())); }
+});

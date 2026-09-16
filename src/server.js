@@ -63,11 +63,12 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
   catch (error) { await lease.release(); throw error; }
   const sessions = new Map(); const attempts = new Map(); const pairings = new Pairings(); let activeBodies = 0;
   function pruneSessions(now) { for (const [id, session] of sessions) if (session.expiresAt <= now) { sessions.delete(id); pairings.revoke(id); } }
-  function issueSession(res, canPair) {
-    const id = randomBytes(32).toString('hex'); const expiresAt = Date.now() + 3600000;
-    sessions.set(id, { expiresAt, canPair });
+  function issueSession(res, canPair, name) {
+    const id = randomBytes(32).toString('hex'); const createdAt = Date.now(); const expiresAt = createdAt + 3600000;
+    const paired = canPair ? {} : { managementId: randomBytes(16).toString('hex'), name: name || '未命名设备', createdAt };
+    sessions.set(id, { expiresAt, canPair, ...paired });
     res.setHeader('Set-Cookie', `mutual_session=${id}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600${tls ? '; Secure' : ''}`);
-    json(res, 200, { ok: true, canPair, expiresAt });
+    json(res, 200, { ok: true, canPair, expiresAt, ...paired });
   }
   const hosts = new Set(allowedHosts || localHosts());
   async function handle(req, res) {
@@ -100,18 +101,33 @@ export async function createServer({ root, key, quota, tls, allowedHosts } = {})
         attempts.set(ip, attempt);
         const value = await input(req);
         if (route === '/api/session' && (typeof value.key !== 'string' || !equal(value.key, key))) throw new TransferError(401, 'Incorrect workspace key');
+        if (route === '/api/pair' && value.name !== undefined && (typeof value.name !== 'string' || value.name.trim().length > 40 || /[\u0000-\u001f\u007f]/u.test(value.name))) throw new TransferError(400, 'Device name must be at most 40 characters without control characters');
         pruneSessions(now);
         if (sessions.size >= 128) throw new TransferError(429, 'Workspace session limit reached');
         if (route === '/api/pair') pairings.consume(value.code, issuer => sessions.get(issuer)?.canPair === true && sessions.get(issuer).expiresAt > Date.now());
-        issueSession(res, route === '/api/session'); return;
+        issueSession(res, route === '/api/session', route === '/api/pair' ? value.name?.trim() : undefined); return;
       }
       const cookie = /(?:^|;\s*)mutual_session=([a-f0-9]{64})(?:;|$)/.exec(req.headers.cookie || '')?.[1];
       const bearer = (req.headers.authorization || '').replace(/^Bearer /, '');
       pruneSessions(Date.now()); const session = sessions.get(cookie);
       if (!session && !equal(bearer, key)) throw new TransferError(401, 'Join the workspace first');
-      if (req.method === 'GET' && route === '/api/session') { json(res, 200, { canPair: session?.canPair === true, expiresAt: session?.expiresAt ?? null }); return; }
+      if (req.method === 'GET' && route === '/api/session') { json(res, 200, { canPair: session?.canPair === true, expiresAt: session?.expiresAt ?? null, ...(session?.managementId ? { managementId: session.managementId, name: session.name } : {}) }); return; }
+      if (route.startsWith('/api/paired-sessions/')) {
+        if (!session?.canPair) throw new TransferError(403, 'Sign in with the workspace key to manage paired sessions');
+        if (req.method !== 'DELETE') throw new TransferError(405, 'Method not allowed');
+        const managementId = route.slice('/api/paired-sessions/'.length);
+        if (!/^[a-f0-9]{32}$/.test(managementId)) throw new TransferError(400, 'Invalid paired session ID');
+        const target = [...sessions].find(([, value]) => !value.canPair && value.managementId === managementId);
+        if (target) sessions.delete(target[0]);
+        json(res, 200, { revoked: Boolean(target) }); return;
+      }
       if (route === '/api/paired-sessions') {
         if (!session?.canPair) throw new TransferError(403, 'Sign in with the workspace key to manage paired sessions');
+        if (req.method === 'GET') {
+          const pairedSessions = [...sessions.values()].filter(value => !value.canPair)
+            .map(({ managementId, name, createdAt, expiresAt }) => ({ managementId, name, createdAt, expiresAt }));
+          json(res, 200, { sessions: pairedSessions }); return;
+        }
         if (req.method !== 'DELETE') throw new TransferError(405, 'Method not allowed');
         let revoked = 0;
         // Any workspace-key login can remove guest access globally, without
