@@ -184,9 +184,14 @@ test('owner lists and selectively revokes a named browser session while another 
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: info.outputPath('paired-session-manager.png'), fullPage: true });
     await page.getByRole('button', { name: '关闭列表', exact: true }).click();
-    let release; await page.route('**/api/paired-sessions', async route => { await new Promise(resolve => { release = resolve; }); await route.continue(); });
+    let release; let handled;
+    const routeDone = new Promise(resolve => { handled = resolve; });
+    await page.route('**/api/paired-sessions', async route => { await new Promise(resolve => { release = resolve; }); await route.continue(); handled(); });
     await page.getByRole('button', { name: '管理配对设备', exact: true }).click(); await expect.poll(() => Boolean(release)).toBe(true);
-    await page.getByRole('button', { name: '关闭列表', exact: true }).click(); release(); await page.unroute('**/api/paired-sessions');
+    await page.getByRole('button', { name: '关闭列表', exact: true }).click();
+    const lateResponse = page.waitForResponse(response => response.url().endsWith('/api/paired-sessions') && response.status() === 200);
+    release(); await routeDone; expect((await (await lateResponse).json()).sessions).toHaveLength(1);
+    await page.unroute('**/api/paired-sessions');
     await expect(page.locator('#paired-dialog')).not.toBeVisible(); await expect(page.locator('.paired-session')).toHaveCount(0);
   } finally { await Promise.all(contexts.map(context => context.close())); }
 });
