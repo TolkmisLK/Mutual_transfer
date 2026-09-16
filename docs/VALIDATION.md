@@ -1,8 +1,12 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
-## Selective paired-session management — candidate pending CI
+## Selective paired-session management — 2026-09-16 (Asia/Shanghai)
 
-Added owner-only listing and individual revocation with independent management IDs, optional untrusted device names, confirmation/retry and stale-dialog guards. Local syntax checks pass and Playwright discovers 12 scenarios. Local real-service tests remain blocked by abstract Unix socket EPERM in the data ownership guard; the guard is unchanged. New HTTP/browser scenarios and the existing Linux/Windows, disk-full and portable-package gates must pass remotely before acceptance.
+PR #11 candidate `fabcdcac0f013cc28548b70a19e8104f9edb80b1` passed [CI 35091510353](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35091510353): all five jobs succeeded, including Linux/Windows service tests, real disk-full recovery and Windows portable-package acceptance. Linux reports 33 passing tests. Chromium passed all 12 scenarios in 25.9 seconds; the new desktop and mobile-viewport scenarios each took 1.4 seconds.
+
+Owner-only listing and individual revocation use independent management IDs, optional untrusted device names, explicit confirmation/retry and stale-dialog guards. Real HTTP/browser cases verify cancellation sends no DELETE, a failed request can be retried, only the chosen guest loses access, another guest retains byte-verified file access, and a late list response cannot reopen a closed dialog. The earlier browser teardown race was fixed by waiting for the held response before removing its route; production rate limits and assertions were not weakened.
+
+Downloaded browser artifact `10443979543` and inspected the actual mobile-viewport paired-session dialog: the remaining device and individual revoke action fit, and the completion notice states that other sessions remain. This is Chromium viewport evidence, not a physical phone. Local real-service tests remain blocked by abstract Unix socket EPERM; the data ownership guard was retained. Device names are not verified identities, in-flight authorized requests may finish, and revocation cannot erase downloaded copies.
 
 Development preview, not a native-app or physical-device release acceptance.
 
