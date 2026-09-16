@@ -2,6 +2,8 @@ import { sha256 } from '/vendor/sha2.js';
 import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
 let paused = false; let uploading = false; let pairingTimer;
+let managementGeneration = 0;
+function clearManagement() { managementGeneration++; $('paired-dialog').close(); $('paired-list').replaceChildren(); $('paired-error').textContent = ''; $('paired-identity').textContent = ''; }
 function clearPairing() { clearTimeout(pairingTimer); $('issued-code').textContent = ''; $('pairing-expiry').textContent = ''; $('pairing-dialog').close(); }
 const say = text => { $('status').textContent = text; };
 const size = n => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
@@ -9,7 +11,7 @@ async function api(url, options = {}) {
   const response = await fetch(url, { credentials: 'same-origin', ...options });
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401) { clearPairing(); $('join').hidden = false; $('workspace').hidden = true; }
+    if (response.status === 401) { clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true; }
     throw new Error(result.error || `请求失败 (${response.status})`);
   }
   return result;
@@ -36,6 +38,8 @@ async function refresh() {
   const { files } = await api('/api/transfers'); $('join').hidden = true; $('workspace').hidden = false;
   $('new-pairing').hidden = !session.canPair;
   $('revoke-guests').hidden = !session.canPair;
+  $('manage-guests').hidden = !session.canPair;
+  $('paired-identity').textContent = session.managementId ? `${session.name} · 会话 ${session.managementId.slice(0, 8)}` : '';
   $('list').replaceChildren();
   if (!files.length) { const empty = document.createElement('p'); empty.textContent = '还没有文件。上传后，另一台设备刷新即可看到。'; $('list').append(empty); }
   for (const file of files.sort((a, b) => b.createdAt.localeCompare(a.createdAt))) {
@@ -61,7 +65,7 @@ $('login').onsubmit = async e => {
 };
 $('pair-login').onsubmit = async e => {
   e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
-  try { await api('/api/pair', post({ code: $('pair-code').value })); await refresh(); say('配对成功。此会话 1 小时后过期，可管理空间内全部文件。'); }
+  try { await api('/api/pair', post({ code: $('pair-code').value, name: $('device-name').value })); await refresh(); say('配对成功。此会话 1 小时后过期，可管理空间内全部文件。'); }
   catch (error) { say(error.message); } finally { $('pair-code').value = ''; b.disabled = false; }
 };
 $('new-pairing').onclick = async () => {
@@ -81,6 +85,35 @@ async function revokePairing() {
   finally { button.disabled = false; }
 }
 $('revoke-pairing').onclick = revokePairing;
+async function loadPairedSessions() {
+  const generation = ++managementGeneration;
+  $('paired-list').replaceChildren(); $('paired-error').textContent = '正在读取配对会话…';
+  try {
+    const result = await api('/api/paired-sessions');
+    if (generation !== managementGeneration || !$('paired-dialog').open) return;
+    $('paired-error').textContent = result.sessions.length ? '' : '当前没有有效的配对会话。';
+    for (const session of result.sessions) {
+      const row = document.createElement('article'); row.className = 'paired-session';
+      const description = document.createElement('div'); const name = document.createElement('strong'); name.textContent = session.name;
+      const details = document.createElement('p'); details.textContent = `会话 ${session.managementId.slice(0, 8)} · 加入 ${new Date(session.createdAt).toLocaleTimeString()} · 到期 ${new Date(session.expiresAt).toLocaleTimeString()}`;
+      description.append(name, details);
+      const remove = button('撤销此会话', async () => {
+        if (generation !== managementGeneration || !confirm(`撤销「${session.name}」的会话 ${session.managementId.slice(0, 8)}？其他配对会话、未用配对码和文件会保留。已开始的请求可能完成。`)) return;
+        try {
+          const result = await api('/api/paired-sessions/' + session.managementId, { method: 'DELETE' });
+          if (generation !== managementGeneration) return;
+          say(result.revoked ? '已撤销选中的配对会话。其他会话和文件保留。' : '该配对会话已过期或已撤销。');
+          await loadPairedSessions();
+        } catch (error) { if (generation === managementGeneration) $('paired-error').textContent = '撤销未确认，请刷新列表后重试：' + error.message; }
+      });
+      row.append(description, remove); $('paired-list').append(row);
+    }
+  } catch (error) { if (generation === managementGeneration) $('paired-error').textContent = '无法读取，请重试：' + error.message; }
+}
+$('manage-guests').onclick = () => { $('paired-dialog').showModal(); void loadPairedSessions(); };
+$('refresh-paired').onclick = () => { void loadPairedSessions(); };
+$('close-paired').onclick = () => { $('paired-dialog').close(); };
+$('paired-dialog').addEventListener('close', () => { managementGeneration++; $('paired-list').replaceChildren(); $('paired-error').textContent = ''; });
 $('revoke-guests').onclick = async () => {
   if (!confirm('撤销全部已配对设备和未用配对码？这些设备的后续请求将被拒绝，已经开始的请求可能完成。使用访问密钥登录的设备会保留。')) return;
   const button = $('revoke-guests'); button.disabled = true;
@@ -94,7 +127,7 @@ $('pairing-dialog').addEventListener('cancel', e => { e.preventDefault(); revoke
 $('refresh').onclick = () => refresh().catch(e => say(e.message));
 $('logout').onclick = async () => {
   if (uploading) { say('请先暂停传输，再退出。'); return; }
-  try { await api('/api/session', { method: 'DELETE' }); clearPairing(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
+  try { await api('/api/session', { method: 'DELETE' }); clearPairing(); clearManagement(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
 };
 $('close').onclick = () => $('preview').close();
 $('preview').addEventListener('close', () => $('preview-body').replaceChildren());
