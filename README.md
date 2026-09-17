@@ -68,3 +68,7 @@ npm run check
 已记录的 Linux/Windows 测试覆盖真实 TLS 校验、配对撤销、独占数据目录、分块上传下载与重启恢复；真实浏览器测试覆盖桌面/手机视口上传、预览、下载及中断续传。本机 HTTP 超过 5 GiB 传输和下载哈希验证、Linux 临时文件系统实际写满后的安全恢复也已通过。各版本的准确测试数量与新功能候选状态见 [VALIDATION.md](docs/VALIDATION.md)；这些不等于 Android/iOS 真机或跨设备 Wi-Fi 验收。完整路线见 [ROADMAP.md](docs/ROADMAP.md)，协议见 [PROTOCOL.md](docs/PROTOCOL.md)。
 
 技术参考：[Node.js HTTP](https://nodejs.org/api/http.html)、[Node.js 文件流](https://nodejs.org/api/fs.html)、[浏览器 File API](https://developer.mozilla.org/en-US/docs/Web/API/File_API)。
+
+### Android development preview
+
+An Android client is under validation in [`android/`](android/). It connects to the existing HTTPS service and uses Android document selection and verified downloads. See [build instructions and current acceptance limits](docs/ANDROID.md). It is not yet a validated stable APK release.
