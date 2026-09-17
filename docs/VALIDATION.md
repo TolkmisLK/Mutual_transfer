@@ -1,5 +1,9 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
+## Android system-document handoff — pending
+
+The next candidate extends the real HTTPS emulator test to actual Downloads-provider file selection and native create-document saving, without stubbing Activity results. It asserts a 65,537-byte provider upload, native SHA-verified completion and independent destination bytes. This new scenario is pending CI; the already-passing synthetic-File/native-helper evidence below is not equivalent to this gate.
+
 ## Android client preview — 2026-09-18 (Asia/Shanghai)
 
 PR #12 candidate `a81fb65c4df2960279d5f6d695a48615ccf94de6` passed [Android CI 35224143633](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35224143633) and all five [service CI jobs 35224143810](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35224143810). Five JVM tests, lint, a debug APK, two ordinary API 35 emulator tests and three isolated acceptance-variant tests passed. Native settings and installed backup-exclusion resources were checked. The real HTTPS test logged into the actual Node service through WebView, uploaded a generated 4,259,841-byte File through the shipped handler, downloaded and verified 65,537 bytes with native HTTPS/checksum code, rejected a wrong certificate hostname and cleared the cookie on disconnect.
