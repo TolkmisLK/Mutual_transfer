@@ -1,8 +1,10 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
-## Android client candidate — pending CI
+## Android client preview — 2026-09-18 (Asia/Shanghai)
 
-Native WebView client, document picker and bounded verified downloads are implemented in `android/`. Added a separate Android build/lint/JVM/emulator workflow. No local Android SDK/Gradle toolchain is available. CI and physical-device transfer acceptance are pending; see [ANDROID.md](ANDROID.md).
+PR #12 candidate `a81fb65c4df2960279d5f6d695a48615ccf94de6` passed [Android CI 35224143633](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35224143633) and all five [service CI jobs 35224143810](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35224143810). Five JVM tests, lint, a debug APK, two ordinary API 35 emulator tests and three isolated acceptance-variant tests passed. Native settings and installed backup-exclusion resources were checked. The real HTTPS test logged into the actual Node service through WebView, uploaded a generated 4,259,841-byte File through the shipped handler, downloaded and verified 65,537 bytes with native HTTPS/checksum code, rejected a wrong certificate hostname and cleared the cookie on disconnect.
+
+The acceptance-only ephemeral CA and connection fixture are absent from the distributable debug APK. Neither the acceptance APK nor private key/connection assets were uploaded. Artifact `10498221979` was downloaded; its actual native HTTPS screenshot was reviewed (it shows the upper workspace controls, not the below-fold file rows). APK SHA-256 `892c4e8eba63fd9932a831104d5609393086afa9a188ed63466e2fa23c07e415` matched and ZIP integrity passed. This is **not** system document-picker/provider upload/download, physical Wi-Fi, production CA enrollment, OEM backup behavior, background/rotation or signed-release acceptance. No local Android toolchain execution is claimed. See [ANDROID.md](ANDROID.md).
 
 ## Selective paired-session management — 2026-09-16 (Asia/Shanghai)
 
