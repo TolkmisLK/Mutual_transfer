@@ -36,7 +36,7 @@ jobs:
           disable-animations: true
           script: |
             gradle --no-daemon -p android connectedDebugAndroidTest
-            adb pull /sdcard/Android/data/dev.ncc.mutualtransfer/files/client-startup.png android/client-startup.png
+            adb pull /data/local/tmp/mutual-transfer-startup.png android/client-startup.png
       - name: Checksum debug-signed preview
         run: sha256sum android/app/build/outputs/apk/debug/app-debug.apk > android/app/build/outputs/apk/debug/app-debug.apk.sha256
       - uses: actions/upload-artifact@v4

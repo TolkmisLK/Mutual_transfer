@@ -1,6 +1,6 @@
 package dev.ncc.mutualtransfer;
 
-import android.graphics.Bitmap;
+import android.os.ParcelFileDescriptor;
 import android.security.NetworkSecurityPolicy;
 import android.view.View;
 import android.view.ViewGroup;
@@ -12,8 +12,7 @@ import android.widget.TextView;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
-import java.io.File;
-import java.io.FileOutputStream;
+import java.io.FileInputStream;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import static org.junit.Assert.*;
@@ -42,11 +41,13 @@ public class ClientStartupTest {
                 assertNull(web.getUrl());
             });
             InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-            Bitmap screenshot = InstrumentationRegistry.getInstrumentation().getUiAutomation().takeScreenshot();
-            assertNotNull(screenshot);
-            File file = new File(InstrumentationRegistry.getInstrumentation().getTargetContext().getExternalFilesDir(null), "client-startup.png");
-            try (FileOutputStream output = new FileOutputStream(file)) { assertTrue(screenshot.compress(Bitmap.CompressFormat.PNG, 100, output)); }
-            screenshot.recycle();
+            // UTP uninstalls the tested APK after the suite, removing app-scoped files.
+            // Capture through the test-only shell into a shell-owned path instead.
+            try (ParcelFileDescriptor capture = InstrumentationRegistry.getInstrumentation().getUiAutomation()
+                    .executeShellCommand("screencap -p /data/local/tmp/mutual-transfer-startup.png");
+                 FileInputStream completion = new FileInputStream(capture.getFileDescriptor())) {
+                assertEquals("screencap reported an error", -1, completion.read());
+            }
         }
     }
 }
