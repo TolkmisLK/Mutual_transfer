@@ -19,6 +19,22 @@ import static org.junit.Assert.*;
 
 @RunWith(AndroidJUnit4.class)
 public class ClientStartupTest {
+    @Test public void installedAppDisablesBackupAndExcludesEveryTransferDomain() throws Exception {
+        android.content.Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+        assertEquals(0, context.getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_ALLOW_BACKUP);
+        java.util.Set<String> domains = new java.util.HashSet<>(java.util.Arrays.asList("root", "file", "database", "sharedpref", "external", "device_root", "device_file", "device_database", "device_sharedpref"));
+        java.util.Map<String, java.util.Set<String>> found = new java.util.HashMap<>(); String section = null;
+        try (android.content.res.XmlResourceParser xml = context.getResources().getXml(R.xml.data_extraction_rules)) {
+            for (int event = xml.getEventType(); event != org.xmlpull.v1.XmlPullParser.END_DOCUMENT; event = xml.next()) {
+                if (event == org.xmlpull.v1.XmlPullParser.START_TAG) {
+                    String name = xml.getName(); assertNotEquals("include", name);
+                    if (name.equals("cloud-backup") || name.equals("device-transfer")) { section = name; found.put(name, new java.util.HashSet<>()); }
+                    if (name.equals("exclude")) { assertNotNull(section); assertEquals(".", xml.getAttributeValue(null, "path")); found.get(section).add(xml.getAttributeValue(null, "domain")); }
+                } else if (event == org.xmlpull.v1.XmlPullParser.END_TAG && xml.getName().equals(section)) section = null;
+            }
+        }
+        assertEquals(domains, found.get("cloud-backup")); assertEquals(domains, found.get("device-transfer"));
+    }
     private <T> T find(View view, Class<T> type, String text) {
         if (type.isInstance(view) && (text == null || (view instanceof TextView && ((TextView)view).getText().toString().equals(text)))) return type.cast(view);
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup)view).getChildCount(); i++) {

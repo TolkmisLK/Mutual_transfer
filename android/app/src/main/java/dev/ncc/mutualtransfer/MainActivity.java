@@ -44,9 +44,10 @@ public final class MainActivity extends Activity {
         settings.setSafeBrowsingEnabled(true); WebView.setWebContentsDebuggingEnabled(false);
         CookieManager.getInstance().setAcceptThirdPartyCookies(web, false);
         web.setWebViewClient(new WebViewClient() {
-            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { return origin == null || !origin.allows(request.getUrl().toString()); }
+            @Override public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) { OriginPolicy current = origin; return current == null || !current.allows(request.getUrl().toString()); }
             @Override public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-                if (origin != null && origin.allows(request.getUrl().toString())) return null;
+                OriginPolicy current = origin;
+                if (current != null && current.allows(request.getUrl().toString())) return null;
                 return new WebResourceResponse("text/plain", "UTF-8", 403, "Blocked", java.util.Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
             }
             @Override public void onReceivedSslError(WebView view, SslErrorHandler handler, SslError error) { handler.cancel(); show("证书验证失败。请由设备管理员配置可信 CA，不能跳过证书错误。"); }
@@ -77,9 +78,11 @@ public final class MainActivity extends Activity {
     }
     private void show(String message) { runOnUiThread(() -> { if (!isDestroyed()) status.setText(message); }); }
     private boolean safeDocument(Uri uri) {
-        if (uri == null || !"content".equals(uri.getScheme())) return false;
-        ProviderInfo provider = getPackageManager().resolveContentProvider(uri.getAuthority(), 0);
-        return provider != null && provider.applicationInfo.uid != Process.myUid();
+        if (uri == null || !"content".equals(uri.getScheme()) || uri.getAuthority() == null) return false;
+        try {
+            ProviderInfo provider = getPackageManager().resolveContentProvider(uri.getAuthority(), 0);
+            return provider != null && provider.applicationInfo != null && provider.applicationInfo.uid != Process.myUid();
+        } catch (RuntimeException unavailable) { return false; }
     }
     @Override protected void onActivityResult(int request, int result, Intent data) {
         super.onActivityResult(request, result, data); Uri uri = result == RESULT_OK && data != null ? data.getData() : null;
