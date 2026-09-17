@@ -11,6 +11,16 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    // This type is test-only: its generated ephemeral CA must never enter a
+    // distributable debug/release APK. Separate ID prevents profile reuse.
+    buildTypes {
+        acceptance {
+            initWith debug
+            applicationIdSuffix '.acceptance'
+            matchingFallbacks = ['debug']
+        }
+    }
+    testBuildType project.hasProperty('acceptanceTests') ? 'acceptance' : 'debug'
 }
 dependencies {
     testImplementation 'junit:junit:4.13.2'
