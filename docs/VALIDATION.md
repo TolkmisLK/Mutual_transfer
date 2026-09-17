@@ -1,5 +1,9 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
+## Android client candidate — pending CI
+
+Native WebView client, document picker and bounded verified downloads are implemented in `android/`. Added a separate Android build/lint/JVM/emulator workflow. No local Android SDK/Gradle toolchain is available. CI and physical-device transfer acceptance are pending; see [ANDROID.md](ANDROID.md).
+
 ## Selective paired-session management — 2026-09-16 (Asia/Shanghai)
 
 PR #11 candidate `fabcdcac0f013cc28548b70a19e8104f9edb80b1` passed [CI 35091510353](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35091510353): all five jobs succeeded, including Linux/Windows service tests, real disk-full recovery and Windows portable-package acceptance. Linux reports 33 passing tests. Chromium passed all 12 scenarios in 25.9 seconds; the new desktop and mobile-viewport scenarios each took 1.4 seconds.

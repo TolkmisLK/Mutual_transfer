@@ -7,3 +7,9 @@ test-results/
 playwright-report/
 .browser-test-data/
 dist/
+
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
