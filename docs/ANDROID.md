@@ -1,6 +1,6 @@
 # Android client development preview
 
-Lifecycle cleanup candidate: normal Activity destruction invalidates active and queued saves, disconnects active HTTPS and drains accepted tasks so each can attempt removal of its own incomplete document. It does not discard queued saves with `shutdownNow`. This is not a guarantee after OS process death or for a provider that blocks indefinitely; no background transfer service is added. The new queue-ordering regression is a controlled JVM test, with real Android acceptance still required.
+Normal Activity destruction invalidates active and queued saves, disconnects active HTTPS and drains accepted tasks so each can attempt removal of its own incomplete document. It does not discard queued saves with `shutdownNow`. This is not a guarantee after OS process death or for a provider that blocks indefinitely; no background transfer service is added. The queue-ordering regression passed as a controlled JVM test in CI, alongside existing real Android HTTPS/document-provider cases; full rotation/background acceptance remains outstanding.
 
 The `android/` project packages the existing responsive file-space interface in an Android WebView with native document selection and a bounded, checksum-verified download path. It is a client for an already-running Mutual Transfer server, not an Android file server or background transfer service.
 
