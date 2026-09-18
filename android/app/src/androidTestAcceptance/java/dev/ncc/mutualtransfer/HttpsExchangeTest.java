@@ -150,15 +150,19 @@ public class HttpsExchangeTest {
                     if (rejected.get()) break; Thread.sleep(200);
                 } while (System.nanoTime() < rejectedDeadline);
                 assertTrue("Corrupted bytes must not be reported as saved", rejected.get());
-                String absent = "";
+                boolean removed = false;
                 do {
-                    try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("test ! -e /sdcard/Download/" + damagedName + " && echo REMOVED");
+                    // No shell operators: an independently successful directory
+                    // listing must still contain the earlier good destination.
+                    try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("ls -1 /sdcard/Download/");
                          FileInputStream input = new FileInputStream(shell.getFileDescriptor())) {
-                        absent = new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).trim();
+                        java.util.List<String> names = java.util.Arrays.asList(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\\r?\\n"));
+                        assertTrue("Destination directory listing must succeed", names.contains(savedName));
+                        removed = !names.contains(damagedName);
                     }
-                    if (absent.equals("REMOVED")) break; Thread.sleep(200);
+                    if (removed) break; Thread.sleep(200);
                 } while (System.nanoTime() < rejectedDeadline);
-                assertEquals("Failed destination must actually be removed", "REMOVED", absent);
+                assertTrue("Failed destination must actually be removed", removed);
                 // Failure cleanup must not touch the earlier successful document.
                 try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("cat /sdcard/Download/" + savedName);
                      FileInputStream input = new FileInputStream(shell.getFileDescriptor())) { assertArrayEquals(fixture, input.readNBytes(65538)); }
