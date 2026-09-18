@@ -11,8 +11,8 @@ export function summarizeCrash(log) {
     fatalJava ||= /FATAL EXCEPTION:/.test(line);
     const type = line.match(/(?:^|\s)((?:java|javax|android|androidx|org\.chromium|dev\.ncc)(?:\.[A-Za-z_$][A-Za-z0-9_$]*){1,12}(?:Exception|Error))(?::|\s|$)/);
     if (type && classes.size < 20) classes.add(type[1]);
-    const frame = line.match(/\bat (dev\.ncc\.mutualtransfer\.[A-Za-z_$][A-Za-z0-9_$.]{0,150})\((MainActivity|VerifiedDownload|OriginPolicy|HttpsExchangeTest)\.java:([0-9]{1,6})\)/);
-    if (frame && frames.size < 40) frames.add(`${frame[1]}(${frame[2]}.java:${frame[3]})`);
+    const frame = line.match(/\bat ((?:dev\.ncc\.mutualtransfer|android|androidx|java|org\.chromium)\.[A-Za-z_$][A-Za-z0-9_$.]{0,150})\(([A-Za-z_$][A-Za-z0-9_$]{0,80}\.java:[0-9]{1,6}|Native Method|Unknown Source)\)/);
+    if (frame && frames.size < 40) frames.add(`${frame[1]}(${frame[2]})`);
   }
   return { fatalSignal, fatalJava, classes: [...classes], frames: [...frames] };
 }
