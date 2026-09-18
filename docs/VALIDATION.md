@@ -4,6 +4,8 @@
 
 The next candidate deliberately alters only one disposable, completed server fixture while preserving its recorded digest. The real HTTPS/DocumentUI scenario must reject the downloaded bytes, show failure, remove exactly the newly created document, and independently prove the previously successful document remains byte-identical. This is not a physical storage fault, permission-revocation or process-death test. No passing result is claimed until Android CI completes.
 
+Review also found that cancellation arriving during destination flush/close could be followed by a success notice. The candidate rechecks cancellation after flush and after closing provider streams; a JVM regression injects cancellation during flush, even after all source bytes have been written. This is a controlled timing test, not a background/process-death guarantee.
+
 ## Android system-document handoff — 2026-09-18 (Asia/Shanghai)
 
 PR #13 candidate `9cb040131b4b1551b65c3c4e144375e63809cc03` passed [Android CI 35283340505](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35283340505) and all five [service CI jobs 35283340386](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35283340386). The real API 35 HTTPS scenario passed in 11.576 seconds: it created a unique Downloads-provider fixture, selected it through actual DocumentsUI, uploaded 65,537 bytes through the production file callback, and saved a server download through the real create-document UI. It asserted native SHA-verified completion and independently compared the destination bytes, then removed only the generated source/destination. No Activity result was stubbed.

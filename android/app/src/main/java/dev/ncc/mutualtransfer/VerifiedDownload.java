@@ -27,6 +27,8 @@ public final class VerifiedDownload {
         StringBuilder actual = new StringBuilder();
         for (byte value : digest.digest()) actual.append(String.format(Locale.ROOT, "%02x", value & 255));
         if (cancelled.getAsBoolean() || (size >= 0 && size != count) || !expected.contentEquals(actual)) throw new IOException("Incomplete response or checksum mismatch");
-        output.flush(); return count;
+        output.flush();
+        if (cancelled.getAsBoolean()) throw new IOException("Cancelled while flushing destination");
+        return count;
     }
 }
