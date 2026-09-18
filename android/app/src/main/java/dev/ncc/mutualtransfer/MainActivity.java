@@ -120,6 +120,7 @@ public final class MainActivity extends Activity {
                 if (output == null) throw new IOException();
                 VerifiedDownload.copy(input, output, expected, size, () -> cancelled.get() || current != generation);
             }
+            if (cancelled.get() || current != generation) throw new IOException("Cancelled while closing destination");
             success = true; showFor(current, "保存完成，SHA-256 与服务器一致。该校验不替代对发送者的信任。");
         } catch (Exception error) { showFor(current, "下载未完成或校验失败；请重新下载，不要使用残留文件。"); }
         finally {

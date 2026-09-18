@@ -31,9 +31,17 @@ try {
   const hash = createHash('sha256').update(bytes).digest('hex');
   const item = await fixture.store.create({ name: 'server-fixture.bin', size: bytes.length, expectedSha256: hash });
   await fixture.store.append(item.id, 0, bytes, hash); await fixture.store.finish(item.id);
+  // Corrupt only a newly created disposable fixture after its valid checkpoint.
+  // The real server still serves the recorded digest; the native client must
+  // reject altered bytes and remove its newly created destination document.
+  const damaged = await fixture.store.create({ name: 'damaged-fixture.bin', size: bytes.length, expectedSha256: hash });
+  await fixture.store.append(damaged.id, 0, bytes, hash); await fixture.store.finish(damaged.id);
+  const altered = Buffer.from(bytes); altered[0] ^= 0xff;
+  await fs.writeFile(fixture.store.file(damaged.id), altered);
+  if (createHash('sha256').update(await fs.readFile(fixture.store.file(damaged.id))).digest('hex') === hash) throw new Error('Corrupt fixture was not changed');
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(10878, '127.0.0.1', resolve); });
   await fs.writeFile(publicCa, await fs.readFile(certPath), { flag: 'wx', mode: 0o600 }); owned.push(publicCa);
-  await fs.writeFile(configPath, JSON.stringify({ origin: 'https://10.0.2.2:10878', key, download: '/api/transfers/' + item.id + '/download', hash, bytes: bytes.length }), { flag: 'wx', mode: 0o600 }); owned.push(configPath);
+  await fs.writeFile(configPath, JSON.stringify({ origin: 'https://10.0.2.2:10878', key, download: '/api/transfers/' + item.id + '/download', damagedDownload: '/api/transfers/' + damaged.id + '/download', hash, bytes: bytes.length }), { flag: 'wx', mode: 0o600 }); owned.push(configPath);
   console.log('Android HTTPS fixture ready (credentials are not logged).');
 } catch (error) { await cleanup(); throw error; }
 for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, () => { cleanup().then(() => process.exit(0), () => process.exit(1)); });

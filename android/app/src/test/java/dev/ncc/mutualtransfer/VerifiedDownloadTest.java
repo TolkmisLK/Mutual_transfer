@@ -29,4 +29,16 @@ public class VerifiedDownloadTest {
         OutputStream sink = new OutputStream() { @Override public void write(int value) { cancelled.set(true); } };
         try { VerifiedDownload.copy(new ByteArrayInputStream(bytes), sink, digest(bytes), 3, cancelled::get); fail(); } catch (IOException expected) { }
     }
+    @Test public void rejectsCancellationDuringDestinationFlush() throws Exception {
+        byte[] bytes = new byte[]{1, 2, 3};
+        AtomicBoolean cancelled = new AtomicBoolean();
+        ByteArrayOutputStream sink = new ByteArrayOutputStream() {
+            @Override public void flush() { cancelled.set(true); }
+        };
+        try {
+            VerifiedDownload.copy(new ByteArrayInputStream(bytes), sink, digest(bytes), bytes.length, cancelled::get);
+            fail("Cancellation during flush must not report a successful download");
+        } catch (IOException expected) { assertTrue(expected.getMessage().contains("Cancelled")); }
+        assertArrayEquals(bytes, sink.toByteArray()); // Full bytes do not override cancellation.
+    }
 }
