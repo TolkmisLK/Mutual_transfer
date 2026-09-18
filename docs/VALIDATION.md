@@ -1,8 +1,10 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
-## Android failed-document cleanup — pending CI
+## Android failed-document cleanup — 2026-09-18 (Asia/Shanghai)
 
-The next candidate deliberately alters only one disposable, completed server fixture while preserving its recorded digest. The real HTTPS/DocumentUI scenario must reject the downloaded bytes, show failure, remove exactly the newly created document, and independently prove the previously successful document remains byte-identical. This is not a physical storage fault, permission-revocation or process-death test. No passing result is claimed until Android CI completes.
+PR #14 candidate `0e79fe5933cc9032657374185a6b9364fb495b46` passed [Android CI 35304958761](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35304958761) and all five [service CI jobs 35304958737](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35304958737). Six JVM tests, lint/build, two debug and three acceptance instrumentation cases passed. The real HTTPS/DocumentsUI scenario (14.327 seconds) altered only one disposable completed fixture, rejected its bytes against the original digest, showed failure, removed the newly created document and independently proved the previous successful document remained byte-identical. Artifact `10531403184` was downloaded and its actual native failure-status screenshot inspected. This is not a physical storage fault, permission-revocation or process-death test.
+
+After merge, [main Android CI 35305358209](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35305358209) failed with an instrumentation process crash and no retained failure artifact; main service CI 35305358190 passed. The cause is not established. A follow-up adds strictly filtered exception/source-frame diagnostics while retaining the failing exit status; the candidate pass above is not a claim that main Android acceptance is stable.
 
 Review also found that cancellation arriving during destination flush/close could be followed by a success notice. The candidate rechecks cancellation after flush and after closing provider streams; a JVM regression injects cancellation during flush, even after all source bytes have been written. This is a controlled timing test, not a background/process-death guarantee.
 
