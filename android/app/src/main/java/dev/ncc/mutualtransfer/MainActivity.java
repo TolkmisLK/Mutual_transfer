@@ -14,8 +14,6 @@ import android.webkit.*;
 import android.widget.*;
 import java.io.*;
 import java.net.URL;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.HttpsURLConnection;
 
@@ -24,7 +22,7 @@ public final class MainActivity extends Activity {
     private WebView web; private TextView status; private EditText address;
     private volatile OriginPolicy origin; private ValueCallback<Uri[]> picker;
     private String pendingDownload; private String pendingCookie;
-    private final ExecutorService downloads = Executors.newSingleThreadExecutor();
+    private final DownloadQueue downloads = new DownloadQueue();
     private final AtomicBoolean cancelled = new AtomicBoolean(); private volatile HttpsURLConnection connection;
     private boolean saving; private volatile int generation;
     @Override public void onCreate(Bundle state) {
@@ -139,5 +137,5 @@ public final class MainActivity extends Activity {
     }
     @Override protected void onPause() { web.onPause(); super.onPause(); }
     @Override protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
-    @Override protected void onDestroy() { generation++; cancelled.set(true); if (connection != null) connection.disconnect(); if (picker != null) picker.onReceiveValue(null); downloads.shutdownNow(); web.destroy(); super.onDestroy(); }
+    @Override protected void onDestroy() { generation++; cancelled.set(true); if (connection != null) connection.disconnect(); if (picker != null) picker.onReceiveValue(null); downloads.close(); web.destroy(); super.onDestroy(); }
 }
