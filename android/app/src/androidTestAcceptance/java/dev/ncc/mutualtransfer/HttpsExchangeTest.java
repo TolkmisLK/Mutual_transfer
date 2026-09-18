@@ -75,9 +75,16 @@ public class HttpsExchangeTest {
         throw new AssertionError("Expected system document picker control was not found");
     }
     private void clickDocument(String text) throws Exception {
-        AccessibilityNodeInfo node = waitDocumentNode(text, false);
-        while (node != null && !node.isClickable()) node = node.getParent();
-        assertNotNull(node); assertTrue(node.performAction(AccessibilityNodeInfo.ACTION_CLICK));
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        do {
+            // DocumentsUI can replace nodes while switching roots. Retry only
+            // an unaccepted action against a fresh node, never skip the action.
+            AccessibilityNodeInfo node = documentNode(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow(), text, false);
+            while (node != null && !node.isClickable()) node = node.getParent();
+            if (node != null && node.isEnabled() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+            Thread.sleep(200);
+        } while (System.nanoTime() < deadline);
+        fail("System document picker did not accept the requested action");
     }
     @Test public void realHttpsLoginChunkUploadAndNativeVerifiedDownload() throws Exception {
         JSONObject config;
