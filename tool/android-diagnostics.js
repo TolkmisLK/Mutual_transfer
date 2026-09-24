@@ -2,24 +2,67 @@ import { execFileSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 
 // Never print raw logcat: WebView/HTTP logs may include fixture credentials.
-// This fixed grammar returns only exception class names and our source frames.
+// Fixed grammars return class/frame names and bounded, credential-free phases.
+const phases = new Set([
+  'scenario-start', 'browser-upload-complete', 'source-created', 'source-write-complete',
+  'source-publish-start', 'source-published', 'provider-upload-complete',
+  'good-save-requested', 'good-save-verified', 'damaged-save-requested',
+  'damaged-save-removed', 'source-cleanup-start', 'source-cleanup-complete',
+  'destination-open-start', 'destination-write-start', 'destination-close-start',
+  'destination-copy-and-close-complete', 'failed-delete-start', 'failed-delete-removed',
+  'failed-delete-retained', 'failed-delete-error',
+]);
 export function summarizeCrash(log) {
-  const classes = new Set(), frames = new Set();
-  let fatalSignal = false, fatalJava = false;
-  for (const line of log.split('\n')) {
-    fatalSignal ||= /Fatal signal (?:6|7|11)\b/.test(line);
-    fatalJava ||= /FATAL EXCEPTION:/.test(line);
-    const type = line.match(/(?:^|\s)((?:java|javax|android|androidx|org\.chromium|dev\.ncc)(?:\.[A-Za-z_$][A-Za-z0-9_$]*){1,12}(?:Exception|Error))(?::|\s|$)/);
-    if (type && classes.size < 20) classes.add(type[1]);
-    const frame = line.match(/\bat ((?:dev\.ncc\.mutualtransfer|android|androidx|java|org\.chromium)\.[A-Za-z_$][A-Za-z0-9_$.]{0,150})\(([A-Za-z_$][A-Za-z0-9_$]{0,80}\.java:[0-9]{1,6}|Native Method|Unknown Source)\)/);
-    if (frame && frames.size < 40) frames.add(`${frame[1]}(${frame[2]})`);
+  const lines = log.split(/\r?\n/);
+  const fatalSignal = lines.some(line => /Fatal signal (?:6|7|11)\b/.test(line));
+  const starts = lines.flatMap((line, index) => /AndroidRuntime(?:\s*\([^)]*\))?:.*FATAL EXCEPTION:/.test(line) ? [index] : []);
+  const start = starts.at(-1);
+  const classes = [], frames = [];
+  let fatalRole = null, fatalThread = null, fatalTime = null;
+  if (start !== undefined) {
+    const first = lines[start];
+    fatalTime = first.match(/\b(\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3})\b/)?.[1] ?? null;
+    const thread = first.match(/FATAL EXCEPTION:\s*([^\r\n]+)/)?.[1].trim();
+    fatalThread = thread === 'main' ? 'main' : /^(?:pool-|Thread-|AsyncTask|HandlerThread|Download)/.test(thread || '') ? 'worker' : 'other';
   }
-  return { fatalSignal, fatalJava, classes: [...classes], frames: [...frames] };
+  // Parse only the final Java fatal block. Earlier crashes on this emulator
+  // must not donate frames to the current failure.
+  for (const line of start === undefined ? [] : lines.slice(start)) {
+    if (!/AndroidRuntime(?:\s*\([^)]*\))?:/.test(line)) continue;
+    const process = line.match(/\bProcess:\s*([A-Za-z0-9._:]+)/)?.[1];
+    if (process && fatalRole === null) {
+      fatalRole = /^dev\.ncc\.mutualtransfer(?:\.acceptance)?\.test$/.test(process) ? 'test'
+        : /^dev\.ncc\.mutualtransfer(?:\.acceptance)?$/.test(process) ? 'app'
+          : /^com\.android\.providers\.downloads(?:\.|:|$)/.test(process) ? 'download-provider'
+            : /^(?:com\.android\.providers\.media|com\.google\.android\.providers\.media)(?:\.|:|$)/.test(process) ? 'media-provider' : 'other';
+    }
+    const type = line.match(/(?:^|\s)((?:java|javax|android|androidx|org\.chromium|dev\.ncc|com\.android\.providers|com\.android\.documentsui)(?:\.[A-Za-z_$][A-Za-z0-9_$]*){1,12}(?:Exception|Error))(?::|\s|$)/);
+    if (type && classes.length < 20) classes.push(type[1]);
+    const frame = line.match(/\bat ((?:dev\.ncc\.mutualtransfer|android|androidx|java|org\.chromium|com\.android\.providers|com\.android\.documentsui)\.[A-Za-z_$][A-Za-z0-9_$.]{0,150})\(([A-Za-z_$][A-Za-z0-9_$]{0,80}\.java:[0-9]{1,6}|D8\$\$SyntheticClass:[0-9]{1,6}|Native Method|Unknown Source)\)/);
+    if (frame && frames.length < 40) frames.push(`${frame[1]}(${frame[2]})`);
+  }
+  return { fatalSignal, fatalJava: start !== undefined, javaFatalCount: starts.length, fatalRole, fatalThread, fatalTime, classes, frames };
+}
+export function summarizePhases(log) {
+  const recent = [];
+  for (const line of log.split('\n')) {
+    const match = line.match(/\sI (MutualAcceptance|MutualTransferSave): phase=([a-z-]+)\s*$/);
+    if (match && phases.has(match[2])) {
+      recent.push(`${match[1]}:${match[2]}`);
+      if (recent.length > 24) recent.shift();
+    }
+  }
+  return recent;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
     const log = execFileSync('adb', ['logcat', '-b', 'crash', '-d'], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
-    console.log(JSON.stringify({ androidCrashSummary: summarizeCrash(log) }));
+    let history = [];
+    try {
+      const phaseLog = execFileSync('adb', ['logcat', '-b', 'main', '-d', '-v', 'threadtime', '-s', 'MutualAcceptance:I', 'MutualTransferSave:I'], { encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+      history = summarizePhases(phaseLog);
+    } catch { /* Preserve the crash summary even when the phase buffer is unavailable. */ }
+    console.log(JSON.stringify({ androidCrashSummary: summarizeCrash(log), androidPhaseHistory: history }));
   } catch { console.log(JSON.stringify({ androidCrashSummaryUnavailable: true })); }
 }
