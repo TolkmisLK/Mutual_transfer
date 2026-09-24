@@ -87,6 +87,85 @@ public class HttpsExchangeTest {
         } while (System.nanoTime() < deadline);
         fail("System document picker did not accept the requested action");
     }
+    @Test public void recreatedPickerResultDeletesItsEmptyDestination() throws Exception {
+        JSONObject config;
+        try (InputStream input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("connection.json")) {
+            config = new JSONObject(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        String suffix = java.util.UUID.randomUUID().toString();
+        String destination = "recreated-save-" + suffix + ".bin";
+        String nextDestination = "next-save-" + suffix + ".bin";
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                find(root, EditText.class, null).setText(config.optString("origin"));
+                find(root, Button.class, "连接").performClick();
+            });
+            waitJs(scenario, "!!document.getElementById('login') && typeof document.getElementById('login').onsubmit === 'function'");
+            js(scenario, "document.getElementById('key').value=" + JSONObject.quote(config.getString("key")) + ";document.getElementById('login').requestSubmit();");
+            waitJs(scenario, "!document.getElementById('workspace').hidden && document.getElementById('list').textContent.includes('server-fixture.bin')");
+            tapElement(scenario, "a[href='" + config.getString("download") + "']");
+            AccessibilityNodeInfo filename = waitDocumentNode("", true);
+            android.os.Bundle value = new android.os.Bundle();
+            value.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, destination);
+            assertTrue(filename.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, value));
+            phase("picker-recreate-start");
+            scenario.recreate();
+            phase("picker-recreate-complete");
+            clickDocument("Save");
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            boolean cleaned = false;
+            do {
+                java.util.concurrent.atomic.AtomicReference<String> status = new java.util.concurrent.atomic.AtomicReference<>();
+                scenario.onActivity(activity -> status.set(find(activity.getWindow().getDecorView(), TextView.class, "已取消保存并清理空文件。") == null ? "" : "cleaned"));
+                if ("cleaned".equals(status.get())) { cleaned = true; break; }
+                Thread.sleep(200);
+            } while (System.nanoTime() < deadline);
+            assertTrue("Stale picker result did not clean its destination", cleaned);
+            try (android.os.ParcelFileDescriptor listing = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("ls -1 /sdcard/Download/");
+                 FileInputStream input = new FileInputStream(listing.getFileDescriptor())) {
+                java.util.List<String> names = java.util.Arrays.asList(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\\r?\\n"));
+                assertFalse("Stale picker destination still exists", names.contains(destination));
+            }
+            phase("picker-recreate-cleaned");
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                find(root, EditText.class, null).setText(config.optString("origin"));
+                find(root, Button.class, "连接").performClick();
+            });
+            waitJs(scenario, "!!document.getElementById('login') && typeof document.getElementById('login').onsubmit === 'function'");
+            js(scenario, "document.getElementById('key').value=" + JSONObject.quote(config.getString("key")) + ";document.getElementById('login').requestSubmit();");
+            waitJs(scenario, "!document.getElementById('workspace').hidden && document.getElementById('list').textContent.includes('server-fixture.bin')");
+            tapElement(scenario, "a[href='" + config.getString("download") + "']");
+            AccessibilityNodeInfo nextFilename = waitDocumentNode("", true);
+            android.os.Bundle nextValue = new android.os.Bundle();
+            nextValue.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, nextDestination);
+            assertTrue(nextFilename.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, nextValue));
+            clickDocument("Save");
+            waitForStatus(scenario, "保存完成，SHA-256 与服务器一致。该校验不替代对发送者的信任。");
+            try (android.os.ParcelFileDescriptor saved = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("cat /sdcard/Download/" + nextDestination);
+                 FileInputStream input = new FileInputStream(saved.getFileDescriptor())) {
+                byte[] data = input.readNBytes(65538);
+                assertEquals(65537, data.length);
+                for (int i = 0; i < data.length; i++) assertEquals((byte)(i % 251), data[i]);
+            }
+            phase("next-save-verified");
+        } finally {
+            // Unique name in the disposable emulator; also clean up after assertion failures.
+            try (android.os.ParcelFileDescriptor cleanup = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("rm -f /sdcard/Download/" + destination + " /sdcard/Download/" + nextDestination);
+                 FileInputStream completion = new FileInputStream(cleanup.getFileDescriptor())) { completion.readAllBytes(); }
+        }
+    }
+    private void waitForStatus(ActivityScenario<MainActivity> scenario, String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        do {
+            java.util.concurrent.atomic.AtomicBoolean found = new java.util.concurrent.atomic.AtomicBoolean();
+            scenario.onActivity(activity -> found.set(find(activity.getWindow().getDecorView(), TextView.class, expected) != null));
+            if (found.get()) return;
+            Thread.sleep(200);
+        } while (System.nanoTime() < deadline);
+        fail("Expected native save status did not appear");
+    }
     @Test public void realHttpsLoginChunkUploadAndNativeVerifiedDownload() throws Exception {
         phase("scenario-start");
         JSONObject config;

@@ -34,10 +34,12 @@ E AndroidRuntime: at other.private.Provider.update(Provider.java:1)`);
   const history = summarizePhases(`09-24 12:00:00.000  123  456 I MutualAcceptance: phase=scenario-start
 09-24 12:00:01.000  123  456 I MutualAcceptance: phase=source-publish-start
 09-24 12:00:02.000  123  789 I MutualTransferSave: phase=destination-close-start
+09-24 12:00:02.100  123  789 I MutualAcceptance: phase=picker-recreate-complete
+09-24 12:00:02.200  123  789 I MutualTransferSave: phase=stale-delete-removed
 09-24 12:00:03.000  123  789 I MutualTransferSave: phase=destination-close-complete Cookie=secret
 09-24 12:00:04.000  123  789 I MutualTransferSave: phase=not-allowlisted
 09-24 12:00:05.000  123  789 I OtherTag: phase=failed-delete-start`);
-  assert.deepEqual(history, ['MutualAcceptance:scenario-start', 'MutualAcceptance:source-publish-start', 'MutualTransferSave:destination-close-start']);
+  assert.deepEqual(history, ['MutualAcceptance:scenario-start', 'MutualAcceptance:source-publish-start', 'MutualTransferSave:destination-close-start', 'MutualAcceptance:picker-recreate-complete', 'MutualTransferSave:stale-delete-removed']);
   assert.doesNotMatch(JSON.stringify({ crash, history }), /secret|private|Cookie|https/);
 });
 

@@ -4,7 +4,7 @@
 
 第一次使用请看 [带截图的使用教程](docs/QUICKSTART.md)：启动服务、加入文件空间、上传下载、断点续传和配对新设备。
 
-**当前是开发预览。** 已实现可运行的单空间服务和响应式浏览器客户端；原生桌面/移动安装包、真实跨设备大文件验收仍在开发路线中，尚未正式发布。
+**当前是开发预览。** 已实现可运行的单空间服务、响应式浏览器客户端和 Android 预览客户端；真实跨设备大文件验收仍在开发路线中，尚未正式发布。
 
 Windows 免安装服务包已通过 CI 中真实打包进程的上传、正常停止、重启续传和下载校验，包含固定版本 Node 运行时、双击启动入口和独立用户数据目录；它使用浏览器界面，不是原生桌面客户端，尚未完成消费者干净机验收。下载构建产物和具体边界见 [Windows portable 说明](docs/WINDOWS-PORTABLE.md)。
 
@@ -73,4 +73,4 @@ npm run check
 
 ### Android development preview
 
-An Android client is under validation in [`android/`](android/). It connects to the existing HTTPS service and uses Android document selection and verified downloads. See [build instructions and current acceptance limits](docs/ANDROID.md). It is not yet a validated stable APK release.
+Android 预览客户端位于 [`android/`](android/)，可连接现有 HTTPS 服务，通过系统文件选择器上传和保存校验过的下载。使用步骤和当前限制见 [Android 说明](docs/ANDROID.md)；目前尚无稳定版安装包。
