@@ -13,6 +13,9 @@ import android.os.SystemClock;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.runner.lifecycle.ActivityLifecycleCallback;
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
+import androidx.test.runner.lifecycle.Stage;
 import java.io.*;
 import java.net.URL;
 import java.util.concurrent.CountDownLatch;
@@ -75,17 +78,164 @@ public class HttpsExchangeTest {
         }
         throw new AssertionError("Expected system document picker control was not found");
     }
+    private AccessibilityNodeInfo actionableDocumentNode(AccessibilityNodeInfo root, String text) {
+        if (root == null) return null;
+        String pkg = String.valueOf(root.getPackageName());
+        boolean documentUi = pkg.equals("com.android.documentsui") || pkg.equals("com.google.android.documentsui");
+        if (documentUi && root.isVisibleToUser() && root.isEnabled()
+                && (text.equalsIgnoreCase(String.valueOf(root.getText()))
+                    || text.equalsIgnoreCase(String.valueOf(root.getContentDescription())))) {
+            AccessibilityNodeInfo action = root;
+            while (action != null && action.isVisibleToUser() && !action.isClickable()) action = action.getParent();
+            if (action != null && action.isVisibleToUser() && action.isEnabled()) return action;
+        }
+        // A non-clickable title can precede a clickable drawer row with the
+        // same text. Continue through every matching node, not just the first.
+        for (int i = 0; i < root.getChildCount(); i++) {
+            AccessibilityNodeInfo found = actionableDocumentNode(root.getChild(i), text);
+            if (found != null) return found;
+        }
+        return null;
+    }
+    private String documentActionStage(String text) {
+        if ("Show roots".equals(text)) return "open-roots";
+        if ("Downloads".equals(text)) return "select-downloads-root";
+        if ("Save".equals(text)) return "confirm-save";
+        return "select-source-file";
+    }
     private void clickDocument(String text) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         do {
             // DocumentsUI can replace nodes while switching roots. Retry only
             // an unaccepted action against a fresh node, never skip the action.
-            AccessibilityNodeInfo node = documentNode(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow(), text, false);
-            while (node != null && !node.isClickable()) node = node.getParent();
-            if (node != null && node.isEnabled() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+            AccessibilityNodeInfo node = actionableDocumentNode(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow(), text);
+            if (node != null && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
             Thread.sleep(200);
         } while (System.nanoTime() < deadline);
-        fail("System document picker did not accept the requested action");
+        fail("System document picker did not accept stage " + documentActionStage(text));
+    }
+    private String waitDocumentLocation(String sourceName, boolean rootsOpen) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        do {
+            AccessibilityNodeInfo root = InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow();
+            if (actionableDocumentNode(root, sourceName) != null) return sourceName;
+            if (!rootsOpen && actionableDocumentNode(root, "Show roots") != null) return "Show roots";
+            if (actionableDocumentNode(root, "Downloads") != null) return "Downloads";
+            Thread.sleep(200);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("System document picker did not show actionable stage "
+                + (rootsOpen ? "downloads-root-or-source" : "roots-or-source"));
+    }
+    private void selectDownloadedSource(String sourceName) throws Exception {
+        String location = waitDocumentLocation(sourceName, false);
+        if ("Show roots".equals(location)) {
+            clickDocument("Show roots");
+            location = waitDocumentLocation(sourceName, true);
+        }
+        if ("Downloads".equals(location)) clickDocument("Downloads");
+        clickDocument(sourceName);
+    }
+    @Test public void recreatedPickerResultDeletesItsEmptyDestination() throws Exception {
+        JSONObject config;
+        try (InputStream input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("connection.json")) {
+            config = new JSONObject(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+        }
+        String suffix = java.util.UUID.randomUUID().toString();
+        String destination = "recreated-save-" + suffix + ".bin";
+        String nextDestination = "next-save-" + suffix + ".bin";
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                find(root, EditText.class, null).setText(config.optString("origin"));
+                find(root, Button.class, "连接").performClick();
+            });
+            waitJs(scenario, "!!document.getElementById('login') && typeof document.getElementById('login').onsubmit === 'function'");
+            js(scenario, "document.getElementById('key').value=" + JSONObject.quote(config.getString("key")) + ";document.getElementById('login').requestSubmit();");
+            waitJs(scenario, "!document.getElementById('workspace').hidden && document.getElementById('list').textContent.includes('server-fixture.bin')");
+            AtomicReference<MainActivity> original = new AtomicReference<>();
+            scenario.onActivity(original::set);
+            tapElement(scenario, "a[href='" + config.getString("download") + "']");
+            AccessibilityNodeInfo filename = waitDocumentNode("", true);
+            android.os.Bundle value = new android.os.Bundle();
+            value.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, destination);
+            assertTrue(filename.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, value));
+            CountDownLatch oldDestroyed = new CountDownLatch(1);
+            CountDownLatch replacementCreated = new CountDownLatch(1);
+            CountDownLatch replacementStopped = new CountDownLatch(1);
+            ActivityLifecycleCallback lifecycle = (activity, stage) -> {
+                if (activity == original.get() && stage == Stage.DESTROYED) oldDestroyed.countDown();
+                if (activity instanceof MainActivity && activity != original.get()) {
+                    if (stage == Stage.CREATED) replacementCreated.countDown();
+                    if (stage == Stage.STOPPED) replacementStopped.countDown();
+                }
+            };
+            ActivityLifecycleMonitorRegistry.getInstance().addLifecycleCallback(lifecycle);
+            try {
+                phase("picker-recreate-start");
+                // ActivityScenario.recreate() first waits for RESUMED, which cannot
+                // occur while the real system document picker owns the foreground.
+                scenario.onActivity(MainActivity::recreate);
+                assertTrue("Original Activity was not destroyed", oldDestroyed.await(20, TimeUnit.SECONDS));
+                assertTrue("Replacement Activity was not created", replacementCreated.await(20, TimeUnit.SECONDS));
+                assertTrue("Replacement Activity did not stop behind DocumentsUI", replacementStopped.await(20, TimeUnit.SECONDS));
+                scenario.onActivity(activity -> {
+                    assertNotSame(original.get(), activity);
+                    assertNotNull(find(activity.getWindow().getDecorView(), TextView.class,
+                            "上次保存可能中断；若目标文件已创建，请检查并删除未完成文件。"));
+                });
+                phase("picker-recreate-complete");
+                clickDocument("Save");
+            } finally {
+                ActivityLifecycleMonitorRegistry.getInstance().removeLifecycleCallback(lifecycle);
+            }
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+            boolean cleaned = false;
+            do {
+                java.util.concurrent.atomic.AtomicReference<String> status = new java.util.concurrent.atomic.AtomicReference<>();
+                scenario.onActivity(activity -> status.set(find(activity.getWindow().getDecorView(), TextView.class, "已取消保存并清理空文件。") == null ? "" : "cleaned"));
+                if ("cleaned".equals(status.get())) { cleaned = true; break; }
+                Thread.sleep(200);
+            } while (System.nanoTime() < deadline);
+            assertTrue("Stale picker result did not clean its destination", cleaned);
+            try (android.os.ParcelFileDescriptor listing = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("ls -1 /sdcard/Download/");
+                 FileInputStream input = new FileInputStream(listing.getFileDescriptor())) {
+                java.util.List<String> names = java.util.Arrays.asList(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\\r?\\n"));
+                assertFalse("Stale picker destination still exists", names.contains(destination));
+            }
+            phase("picker-recreate-cleaned");
+            scenario.onActivity(activity -> {
+                View root = activity.getWindow().getDecorView();
+                find(root, EditText.class, null).setText(config.optString("origin"));
+                find(root, Button.class, "连接").performClick();
+            });
+            waitJs(scenario, "!!document.getElementById('login') && typeof document.getElementById('login').onsubmit === 'function'");
+            js(scenario, "document.getElementById('key').value=" + JSONObject.quote(config.getString("key")) + ";document.getElementById('login').requestSubmit();");
+            waitJs(scenario, "!document.getElementById('workspace').hidden && document.getElementById('list').textContent.includes('server-fixture.bin')");
+            tapElement(scenario, "a[href='" + config.getString("download") + "']");
+            AccessibilityNodeInfo nextFilename = waitDocumentNode("", true);
+            android.os.Bundle nextValue = new android.os.Bundle();
+            nextValue.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, nextDestination);
+            assertTrue(nextFilename.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, nextValue));
+            clickDocument("Save");
+            waitForStatus(scenario, "保存完成，SHA-256 与服务器一致。该校验不替代对发送者的信任。");
+            try (android.os.ParcelFileDescriptor saved = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("cat /sdcard/Download/" + nextDestination);
+                 FileInputStream input = new FileInputStream(saved.getFileDescriptor())) {
+                byte[] data = input.readNBytes(65538);
+                assertEquals(65537, data.length);
+                for (int i = 0; i < data.length; i++) assertEquals((byte)(i % 251), data[i]);
+            }
+            phase("next-save-verified");
+        }
+    }
+    private void waitForStatus(ActivityScenario<MainActivity> scenario, String expected) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+        do {
+            java.util.concurrent.atomic.AtomicBoolean found = new java.util.concurrent.atomic.AtomicBoolean();
+            scenario.onActivity(activity -> found.set(find(activity.getWindow().getDecorView(), TextView.class, expected) != null));
+            if (found.get()) return;
+            Thread.sleep(200);
+        } while (System.nanoTime() < deadline);
+        fail("Expected native save status did not appear");
     }
     @Test public void realHttpsLoginChunkUploadAndNativeVerifiedDownload() throws Exception {
         phase("scenario-start");
@@ -131,7 +281,7 @@ public class HttpsExchangeTest {
                 values.clear(); values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0); resolver.update(source, values, null, null);
                 phase("source-published");
                 tapElement(scenario, "#files");
-                clickDocument("Show roots"); clickDocument("Downloads"); clickDocument(sourceName);
+                selectDownloadedSource(sourceName);
                 waitJs(scenario, "document.getElementById('status').textContent.includes(" + JSONObject.quote(sourceName + " 已上传并通过校验") + ") && !document.getElementById('files').disabled");
                 phase("provider-upload-complete");
                 phase("good-save-requested");
@@ -189,9 +339,10 @@ public class HttpsExchangeTest {
                 phase("source-cleanup-start");
                 resolver.delete(source, null, null);
                 phase("source-cleanup-complete");
-                // Exact unique fixture path in this disposable emulator only.
-                try (android.os.ParcelFileDescriptor cleanup = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("rm -f /sdcard/Download/" + savedName + " /sdcard/Download/" + damagedName);
-                     FileInputStream completion = new FileInputStream(cleanup.getFileDescriptor())) { completion.readAllBytes(); }
+                // Successful destination fixtures stay on this disposable emulator
+                // until shutdown: shell deletion can race DownloadProvider's async
+                // descriptor-close metadata update. Failed destinations must still
+                // pass the explicit removal assertions above.
             }
             AtomicReference<String> cookie = new AtomicReference<>(); scenario.onActivity(a -> cookie.set(CookieManager.getInstance().getCookie(origin)));
             assertNotNull(cookie.get());

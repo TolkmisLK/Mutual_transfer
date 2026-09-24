@@ -1,5 +1,17 @@
 # Android client development preview
 
+Android 预览版 `0.1.1-preview` 的使用步骤：
+
+1. 在 Android 8.0 或更新设备上安装项目提供的预览 APK，并确认系统 WebView 已更新。
+2. 在另一台设备启动 Mutual Transfer HTTPS 服务，确保手机信任其证书，且地址中的主机名与证书一致。
+3. 在应用顶部输入服务地址（如 `https://files.example.test:8787`），点击「连接」，再用共享密钥或配对码登录。
+4. 上传时点击页面的文件选择按钮，通过系统文件选择器选取文件，等待显示校验完成。
+5. 下载时点击文件行的下载链接，在系统界面选保存位置，等待应用显示 SHA-256 校验完成。
+
+传输期间请保持应用在前台。
+
+「取消下载」会停止当前保存。下载先暂存在应用私有缓存中，完整校验后才写入所选位置；校验失败时会尝试删除系统选择器创建的空文件。若写入目标文件已开始后发生错误或取消，应用会提示手动删除可能不完整的文件，避免在系统文件提供器尚未完成关闭回调时立即删除。「断开并清理」会清除本应用网页会话；若系统保存界面已打开，返回的旧保存结果也会尝试清理新建的空文件。重新连接后可正常发起新的保存；上传中断可重新选择相同源文件续传，下载中断需从头开始。此版本仍是预览版；独立实体设备、后台传输和系统进程终止后的清理尚未验证或支持。
+
 Normal Activity destruction invalidates active and queued saves, disconnects active HTTPS and drains accepted tasks so each can attempt removal of its own incomplete document. It does not discard queued saves with `shutdownNow`. This is not a guarantee after OS process death or for a provider that blocks indefinitely; no background transfer service is added. The queue-ordering regression passed as a controlled JVM test in CI, alongside existing real Android HTTPS/document-provider cases; full rotation/background acceptance remains outstanding.
 
 The `android/` project packages the existing responsive file-space interface in an Android WebView with native document selection and a bounded, checksum-verified download path. It is a client for an already-running Mutual Transfer server, not an Android file server or background transfer service.
@@ -8,7 +20,7 @@ The `android/` project packages the existing responsive file-space interface in 
 
 Use Android 8.0 (API 26) or newer with an up-to-date system WebView. Enter the server HTTPS origin, for example `https://files.example.test:8787`, then connect and sign in with a workspace key or temporary pairing code. Plain HTTP, embedded credentials and address paths/query strings are rejected. The system must trust the certificate and its hostname; an explicitly installed user CA is supported for a private network. SSL errors cannot be bypassed.
 
-Choose files through Android's document picker (up to 100 in one selection), then keep the application in the foreground. Downloads ask for a new document location and stream with a 64 KiB buffer, a 100 GiB bound, and exact SHA-256/length verification. Redirected downloads are rejected. Cancellation, disconnection, HTTP errors and checksum failures attempt to remove the incomplete destination; a failed removal asks the user to delete it manually. Uploads use the existing web chunk/resume protocol. Re-select the same source file to resume an interrupted upload. Downloads currently restart from the beginning.
+Choose files through Android's document picker (up to 100 in one selection), then keep the application in the foreground. Downloads ask for a new document location and stream with a 64 KiB buffer, a 100 GiB bound, and exact SHA-256/length verification through a private temporary file. Redirected downloads are rejected. Failures before destination writing attempt to remove the empty document; failures after writing starts leave the possibly incomplete document for manual deletion. Uploads use the existing web chunk/resume protocol. Re-select the same source file to resume an interrupted upload. Downloads currently restart from the beginning.
 
 **断开并清理** clears this application's web cookies/cache/storage and cancels its local pending work. It does not revoke already-issued server sessions on other devices. Use the server's paired-session controls for remote revocation. A process restart or activity recreation opens a fresh address-entry screen; no saved origin/key or background-resume guarantee is provided.
 

@@ -19,3 +19,7 @@ test -f android/app/src/androidTestAcceptance/assets/connection.json
 adb reverse tcp:10878 tcp:10878
 gradle --no-daemon -p android -PacceptanceTests connectedAcceptanceAndroidTest --rerun-tasks
 adb pull /data/local/tmp/mutual-transfer-https.png android/client-https.png
+# Provider callbacks can crash after the instrumentation assertions pass.
+# Keep this disposable emulator's cumulative crash buffer across rounds so a
+# late callback between rounds cannot be erased by the next round's setup.
+node tool/android-diagnostics.js --check
