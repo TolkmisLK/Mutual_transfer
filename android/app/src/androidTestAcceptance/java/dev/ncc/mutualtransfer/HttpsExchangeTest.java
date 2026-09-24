@@ -13,6 +13,9 @@ import android.os.SystemClock;
 import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
+import androidx.test.runner.lifecycle.ActivityLifecycleCallback;
+import androidx.test.runner.lifecycle.ActivityLifecycleMonitorRegistry;
+import androidx.test.runner.lifecycle.Stage;
 import java.io.*;
 import java.net.URL;
 import java.util.concurrent.CountDownLatch;
@@ -104,15 +107,37 @@ public class HttpsExchangeTest {
             waitJs(scenario, "!!document.getElementById('login') && typeof document.getElementById('login').onsubmit === 'function'");
             js(scenario, "document.getElementById('key').value=" + JSONObject.quote(config.getString("key")) + ";document.getElementById('login').requestSubmit();");
             waitJs(scenario, "!document.getElementById('workspace').hidden && document.getElementById('list').textContent.includes('server-fixture.bin')");
+            AtomicReference<MainActivity> original = new AtomicReference<>();
+            scenario.onActivity(original::set);
             tapElement(scenario, "a[href='" + config.getString("download") + "']");
             AccessibilityNodeInfo filename = waitDocumentNode("", true);
             android.os.Bundle value = new android.os.Bundle();
             value.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, destination);
             assertTrue(filename.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, value));
-            phase("picker-recreate-start");
-            scenario.recreate();
-            phase("picker-recreate-complete");
-            clickDocument("Save");
+            CountDownLatch oldDestroyed = new CountDownLatch(1);
+            CountDownLatch replacementCreated = new CountDownLatch(1);
+            CountDownLatch replacementStopped = new CountDownLatch(1);
+            ActivityLifecycleCallback lifecycle = (activity, stage) -> {
+                if (activity == original.get() && stage == Stage.DESTROYED) oldDestroyed.countDown();
+                if (activity instanceof MainActivity && activity != original.get()) {
+                    if (stage == Stage.CREATED) replacementCreated.countDown();
+                    if (stage == Stage.STOPPED) replacementStopped.countDown();
+                }
+            };
+            ActivityLifecycleMonitorRegistry.getInstance().addLifecycleCallback(lifecycle);
+            try {
+                phase("picker-recreate-start");
+                // ActivityScenario.recreate() first waits for RESUMED, which cannot
+                // occur while the real system document picker owns the foreground.
+                scenario.onActivity(MainActivity::recreate);
+                assertTrue("Original Activity was not destroyed", oldDestroyed.await(20, TimeUnit.SECONDS));
+                assertTrue("Replacement Activity was not created", replacementCreated.await(20, TimeUnit.SECONDS));
+                assertTrue("Replacement Activity did not stop behind DocumentsUI", replacementStopped.await(20, TimeUnit.SECONDS));
+                phase("picker-recreate-complete");
+                clickDocument("Save");
+            } finally {
+                ActivityLifecycleMonitorRegistry.getInstance().removeLifecycleCallback(lifecycle);
+            }
             long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
             boolean cleaned = false;
             do {
