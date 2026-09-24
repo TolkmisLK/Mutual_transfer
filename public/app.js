@@ -13,6 +13,8 @@ const say = text => {
 const messages = {
   'Incorrect workspace key': '访问密钥不正确。请核对服务电脑终端中的 Workspace key；服务重启后自动生成的密钥会变化。',
   'Pairing code is invalid, expired or already used': '配对码无效、已过期或已使用。请在已登录设备上重新生成。',
+  'Join the workspace first': '登录已失效，请重新输入当前访问密钥或新的配对码。',
+  'Pairing requires HTTPS except on loopback': '跨设备配对需要受信任的 HTTPS 地址。请先配置服务证书。',
   'Please wait before trying again': '尝试次数过多，请稍后再试。',
   'Workspace quota exceeded': '文件空间已满或达到文件数上限。请清理不需要的文件后重试。',
   'Storage operation failed; check available disk space': '服务电脑存储操作失败。请检查可用磁盘空间，再重新选择原文件续传。',
