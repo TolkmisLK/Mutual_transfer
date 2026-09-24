@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { summarizeCrash, summarizePhases } from '../tool/android-diagnostics.js';
+import { summarizeCrash, summarizePhases, relevantCrashes } from '../tool/android-diagnostics.js';
 
 test('Android failure diagnostics omit message, URL, cookie and unrecognized frames', () => {
   const report = summarizeCrash(`E AndroidRuntime: FATAL EXCEPTION: main
@@ -60,4 +60,26 @@ test('the final fatal block keeps frame order and classifies process without exp
   assert.deepEqual(summary.classes, ['java.lang.IllegalStateException']);
   assert.deepEqual(summary.frames, ['android.os.Parcel.readException(Parcel.java:2)', 'android.os.Parcel.readException(Parcel.java:3)']);
   assert.doesNotMatch(JSON.stringify(summary), /earlier-secret|later-secret|\.acceptance\.test/);
+});
+
+test('the crash gate catches an earlier DownloadProvider fatal even after an unrelated system fatal', () => {
+  const provider = `E AndroidRuntime: FATAL EXCEPTION: provider-worker
+E AndroidRuntime: Process: android.process.media, PID: 123
+E AndroidRuntime: java.lang.IllegalStateException: private-file-path
+E AndroidRuntime: at android.content.ContentProviderClient.update(ContentProviderClient.java:417)
+E AndroidRuntime: at com.android.providers.downloads.DownloadProvider.updateMediaProvider(DownloadProvider.java:957)
+E AndroidRuntime: at com.android.providers.downloads.DownloadProvider$1.onClose(DownloadProvider.java:1775)`;
+  const unrelated = `E AndroidRuntime: FATAL EXCEPTION: main
+E AndroidRuntime: Process: other.system.service, PID: 456
+E AndroidRuntime: java.lang.IllegalStateException: unrelated-secret
+E AndroidRuntime: at android.os.Parcel.readException(Parcel.java:3209)`;
+  assert.equal(relevantCrashes('').length, 0);
+  assert.equal(relevantCrashes(unrelated).length, 0);
+  const reports = relevantCrashes(`${provider}\n${unrelated}`);
+  assert.equal(reports.length, 1);
+  assert.equal(reports[0].fatalRole, 'media-provider');
+  assert.ok(reports[0].frames.some(frame => frame.includes('DownloadProvider$1.onClose')));
+  assert.doesNotMatch(JSON.stringify(reports), /private-file-path|unrelated-secret|PID|android\.process\.media/);
+  assert.equal(relevantCrashes(provider.replace('android.process.media', 'unknown.system.process')).length, 1);
+  assert.equal(relevantCrashes(unrelated.replace('other.system.service', 'dev.ncc.mutualtransfer.acceptance')).length, 1);
 });

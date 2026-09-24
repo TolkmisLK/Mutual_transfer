@@ -41,4 +41,14 @@ public class VerifiedDownloadTest {
         } catch (IOException expected) { assertTrue(expected.getMessage().contains("Cancelled")); }
         assertArrayEquals(bytes, sink.toByteArray()); // Full bytes do not override cancellation.
     }
+    @Test public void unknownLengthCannotExceedTheAvailableStagingBudget() throws Exception {
+        byte[] bytes = new byte[]{1, 2, 3};
+        try {
+            VerifiedDownload.copy(new ByteArrayInputStream(bytes), new ByteArrayOutputStream(), digest(bytes), -1, 2, () -> false);
+            fail("Unknown response length exceeded private staging capacity");
+        } catch (IOException expected) { assertTrue(expected.getMessage().contains("oversized")); }
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        assertEquals(bytes.length, VerifiedDownload.copy(new ByteArrayInputStream(bytes), output, digest(bytes), -1, 3, () -> false));
+        assertArrayEquals(bytes, output.toByteArray());
+    }
 }

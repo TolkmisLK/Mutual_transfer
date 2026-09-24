@@ -90,6 +90,26 @@ public class HttpsExchangeTest {
         } while (System.nanoTime() < deadline);
         fail("System document picker did not accept the requested action");
     }
+    private String waitDocumentLocation(String sourceName) throws Exception {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        do {
+            AccessibilityNodeInfo root = InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow();
+            for (String expected : new String[]{sourceName, "Downloads", "Show roots"}) {
+                if (documentNode(root, expected, false) != null) return expected;
+            }
+            Thread.sleep(200);
+        } while (System.nanoTime() < deadline);
+        throw new AssertionError("System document picker did not show a Downloads location or source file");
+    }
+    private void selectDownloadedSource(String sourceName) throws Exception {
+        String location = waitDocumentLocation(sourceName);
+        if ("Show roots".equals(location)) {
+            clickDocument("Show roots");
+            location = waitDocumentLocation(sourceName);
+        }
+        if ("Downloads".equals(location)) clickDocument("Downloads");
+        clickDocument(sourceName);
+    }
     @Test public void recreatedPickerResultDeletesItsEmptyDestination() throws Exception {
         JSONObject config;
         try (InputStream input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("connection.json")) {
@@ -133,6 +153,11 @@ public class HttpsExchangeTest {
                 assertTrue("Original Activity was not destroyed", oldDestroyed.await(20, TimeUnit.SECONDS));
                 assertTrue("Replacement Activity was not created", replacementCreated.await(20, TimeUnit.SECONDS));
                 assertTrue("Replacement Activity did not stop behind DocumentsUI", replacementStopped.await(20, TimeUnit.SECONDS));
+                scenario.onActivity(activity -> {
+                    assertNotSame(original.get(), activity);
+                    assertNotNull(find(activity.getWindow().getDecorView(), TextView.class,
+                            "上次保存可能中断；若目标文件已创建，请检查并删除未完成文件。"));
+                });
                 phase("picker-recreate-complete");
                 clickDocument("Save");
             } finally {
@@ -175,10 +200,6 @@ public class HttpsExchangeTest {
                 for (int i = 0; i < data.length; i++) assertEquals((byte)(i % 251), data[i]);
             }
             phase("next-save-verified");
-        } finally {
-            // Unique name in the disposable emulator; also clean up after assertion failures.
-            try (android.os.ParcelFileDescriptor cleanup = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("rm -f /sdcard/Download/" + destination + " /sdcard/Download/" + nextDestination);
-                 FileInputStream completion = new FileInputStream(cleanup.getFileDescriptor())) { completion.readAllBytes(); }
         }
     }
     private void waitForStatus(ActivityScenario<MainActivity> scenario, String expected) throws Exception {
@@ -235,7 +256,7 @@ public class HttpsExchangeTest {
                 values.clear(); values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0); resolver.update(source, values, null, null);
                 phase("source-published");
                 tapElement(scenario, "#files");
-                clickDocument("Show roots"); clickDocument("Downloads"); clickDocument(sourceName);
+                selectDownloadedSource(sourceName);
                 waitJs(scenario, "document.getElementById('status').textContent.includes(" + JSONObject.quote(sourceName + " 已上传并通过校验") + ") && !document.getElementById('files').disabled");
                 phase("provider-upload-complete");
                 phase("good-save-requested");
@@ -293,9 +314,10 @@ public class HttpsExchangeTest {
                 phase("source-cleanup-start");
                 resolver.delete(source, null, null);
                 phase("source-cleanup-complete");
-                // Exact unique fixture path in this disposable emulator only.
-                try (android.os.ParcelFileDescriptor cleanup = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("rm -f /sdcard/Download/" + savedName + " /sdcard/Download/" + damagedName);
-                     FileInputStream completion = new FileInputStream(cleanup.getFileDescriptor())) { completion.readAllBytes(); }
+                // Successful destination fixtures stay on this disposable emulator
+                // until shutdown: shell deletion can race DownloadProvider's async
+                // descriptor-close metadata update. Failed destinations must still
+                // pass the explicit removal assertions above.
             }
             AtomicReference<String> cookie = new AtomicReference<>(); scenario.onActivity(a -> cookie.set(CookieManager.getInstance().getCookie(origin)));
             assertNotNull(cookie.get());

@@ -37,7 +37,7 @@ export function summarizeCrash(log) {
       fatalRole = /^dev\.ncc\.mutualtransfer(?:\.acceptance)?\.test$/.test(process) ? 'test'
         : /^dev\.ncc\.mutualtransfer(?:\.acceptance)?$/.test(process) ? 'app'
           : /^com\.android\.providers\.downloads(?:\.|:|$)/.test(process) ? 'download-provider'
-            : /^(?:com\.android\.providers\.media|com\.google\.android\.providers\.media)(?:\.|:|$)/.test(process) ? 'media-provider' : 'other';
+            : /^(?:android\.process\.media|com\.android\.providers\.media|com\.google\.android\.providers\.media)(?:\.|:|$)/.test(process) ? 'media-provider' : 'other';
     }
     const type = line.match(/(?:^|\s)((?:java|javax|android|androidx|org\.chromium|dev\.ncc|com\.android\.providers|com\.android\.documentsui)(?:\.[A-Za-z_$][A-Za-z0-9_$]*){1,12}(?:Exception|Error))(?::|\s|$)/);
     if (type && classes.length < 20) classes.push(type[1]);
@@ -45,6 +45,15 @@ export function summarizeCrash(log) {
     if (frame && frames.length < 40) frames.push(`${frame[1]}(${frame[2]})`);
   }
   return { fatalSignal, fatalJava: start !== undefined, javaFatalCount: starts.length, fatalRole, fatalThread, fatalTime, classes, frames };
+}
+// The gate must inspect every fatal, not only the final one: an unrelated
+// later system error must not hide a provider failure from a passing test.
+export function relevantCrashes(log) {
+  const lines = log.split(/\r?\n/);
+  const starts = lines.flatMap((line, index) => /AndroidRuntime(?:\s*\([^)]*\))?:.*FATAL EXCEPTION:/.test(line) ? [index] : []);
+  return starts.map((start, index) => summarizeCrash(lines.slice(start, starts[index + 1]).join('\n')))
+    .filter(report => ['app', 'test', 'download-provider', 'media-provider'].includes(report.fatalRole) ||
+      report.frames.some(frame => /^(?:dev\.ncc\.mutualtransfer\.|com\.android\.providers\.(?:downloads|media)\.)/.test(frame)));
 }
 export function summarizePhases(log) {
   const recent = [];
@@ -59,13 +68,24 @@ export function summarizePhases(log) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  const gate = process.argv.includes('--check');
   try {
     const log = execFileSync('adb', ['logcat', '-b', 'crash', '-d'], { encoding: 'utf8', maxBuffer: 8 * 1024 * 1024, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
-    let history = [];
-    try {
-      const phaseLog = execFileSync('adb', ['logcat', '-b', 'main', '-d', '-v', 'threadtime', '-s', 'MutualAcceptance:I', 'MutualTransferSave:I'], { encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
-      history = summarizePhases(phaseLog);
-    } catch { /* Preserve the crash summary even when the phase buffer is unavailable. */ }
-    console.log(JSON.stringify({ androidCrashSummary: summarizeCrash(log), androidPhaseHistory: history }));
-  } catch { console.log(JSON.stringify({ androidCrashSummaryUnavailable: true })); }
+    const crashes = relevantCrashes(log);
+    const summary = summarizeCrash(log);
+    if (gate && crashes.length === 0 && !summary.fatalSignal) {
+      console.log(JSON.stringify({ androidProviderCrashGate: 'passed' }));
+    } else {
+      let history = [];
+      try {
+        const phaseLog = execFileSync('adb', ['logcat', '-b', 'main', '-d', '-v', 'threadtime', '-s', 'MutualAcceptance:I', 'MutualTransferSave:I'], { encoding: 'utf8', maxBuffer: 1024 * 1024, timeout: 10000, stdio: ['ignore', 'pipe', 'pipe'] });
+        history = summarizePhases(phaseLog);
+      } catch { /* Preserve the crash summary even when the phase buffer is unavailable. */ }
+      console.log(JSON.stringify({ androidCrashSummary: summary, relevantCrashCount: crashes.length, relevantCrashes: crashes.slice(-5), androidPhaseHistory: history }));
+      if (gate) process.exitCode = 1;
+    }
+  } catch {
+    console.log(JSON.stringify({ androidCrashSummaryUnavailable: true }));
+    if (gate) process.exitCode = 1;
+  }
 }

@@ -18,6 +18,9 @@ import javax.net.ssl.HttpsURLConnection;
 
 public final class MainActivity extends Activity {
     private static final int PICK = 10;
+    private static final String STAGE_PREFIX = "mutual-transfer-download-", STAGE_SUFFIX = ".part";
+    private static final long FREE_SPACE_MARGIN = 16L * 1024 * 1024;
+    private static boolean staleStagesCleaned;
     private WebView web; private TextView status; private EditText address;
     private volatile OriginPolicy origin; private ValueCallback<Uri[]> picker;
     private final DownloadQueue downloads = new DownloadQueue();
@@ -25,6 +28,7 @@ public final class MainActivity extends Activity {
     private volatile int generation;
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        cleanStaleStagesOnce(getCacheDir());
         saves = new SaveRequests(state == null ? SaveRequests.FIRST_CODE : state.getInt("nextSaveCode", SaveRequests.FIRST_CODE));
         LinearLayout root = new LinearLayout(this); root.setOrientation(LinearLayout.VERTICAL); root.setPadding(16,16,16,8);
         root.setOnApplyWindowInsetsListener((view, insets) -> { view.setPadding(16 + insets.getSystemWindowInsetLeft(), 16 + insets.getSystemWindowInsetTop(), 16 + insets.getSystemWindowInsetRight(), 8 + insets.getSystemWindowInsetBottom()); return insets; });
@@ -33,7 +37,11 @@ public final class MainActivity extends Activity {
         Button open = new Button(this); open.setText("连接"); controls.addView(open);
         Button clear = new Button(this); clear.setText("断开并清理"); controls.addView(clear);
         Button cancel = new Button(this); cancel.setText("取消下载"); controls.addView(cancel); root.addView(controls);
-        status = new TextView(this); status.setText("开发预览：仅受信任 HTTPS；上传需保持前台。无需存储或相册权限。"); root.addView(status);
+        status = new TextView(this);
+        status.setText(state != null && state.getBoolean("wasSaving", false)
+                ? "上次保存可能中断；若目标文件已创建，请检查并删除未完成文件。"
+                : "开发预览：仅受信任 HTTPS；上传需保持前台。无需存储或相册权限。");
+        root.addView(status);
         web = new WebView(this); root.addView(web, new LinearLayout.LayoutParams(-1, 0, 1)); setContentView(root);
         WebSettings settings = web.getSettings(); settings.setJavaScriptEnabled(true); settings.setDomStorageEnabled(true);
         settings.setAllowFileAccess(false); settings.setAllowContentAccess(false); settings.setAllowFileAccessFromFileURLs(false); settings.setAllowUniversalAccessFromFileURLs(false);
@@ -72,11 +80,17 @@ public final class MainActivity extends Activity {
             try { OriginPolicy next = new OriginPolicy(address.getText().toString()); disconnect(() -> { origin = next; web.loadUrl(next.address()); show("请在页面输入共享密钥或配对码。切到后台可能中断传输。"); }); }
             catch (IllegalArgumentException error) { show("请输入仅含地址和端口的 HTTPS 网址，不要附带密码、路径或查询参数。"); }
         });
-        clear.setOnClickListener(view -> disconnect(() -> show("已清理此应用的网页会话；如需使其他设备失效，请在服务端撤销。")));
-        cancel.setOnClickListener(view -> { if (saves.busy()) { saves.cancelActive(); show("已请求取消下载，未完成的目标文件将尝试删除。"); } else show("当前没有进行中的下载。"); });
+        clear.setOnClickListener(view -> {
+            boolean wasSaving = saves.busy();
+            disconnect(() -> show(wasSaving
+                    ? "已清理网页会话；若保存目标已创建，请检查并删除未完成文件。如需使其他设备失效，请在服务端撤销。"
+                    : "已清理此应用的网页会话；如需使其他设备失效，请在服务端撤销。"));
+        });
+        cancel.setOnClickListener(view -> { if (saves.busy()) { saves.cancelActive(); show("已请求取消下载；若已开始写入目标文件，请在所选位置手动删除未完成文件。"); } else show("当前没有进行中的下载。"); });
     }
     @Override protected void onSaveInstanceState(Bundle state) {
         state.putInt("nextSaveCode", saves.nextCode());
+        state.putBoolean("wasSaving", saves.busy());
         super.onSaveInstanceState(state);
     }
     private void show(String message) { runOnUiThread(() -> { if (!isDestroyed()) status.setText(message); }); }
@@ -136,8 +150,26 @@ public final class MainActivity extends Activity {
     private void showStaleCleanup(int current, String message) {
         runOnUiThread(() -> { if (current == generation && !isDestroyed() && !saves.busy()) status.setText(message); });
     }
+    private static synchronized void cleanStaleStagesOnce(File cache) {
+        if (staleStagesCleaned) return;
+        // Never repeat this scan after this process may have started a live save.
+        staleStagesCleaned = true;
+        File[] entries = cache.listFiles();
+        if (entries == null) return;
+        for (File entry : entries) {
+            String name = entry.getName();
+            if (name.startsWith(STAGE_PREFIX) && name.endsWith(STAGE_SUFFIX) && entry.isFile()) entry.delete();
+        }
+    }
+    private static long stagingBudget(long available) throws IOException {
+        if (available < FREE_SPACE_MARGIN) throw new IOException("Insufficient space for verified download");
+        return Math.min(VerifiedDownload.MAX_BYTES, (available - FREE_SPACE_MARGIN) / 2);
+    }
+    private static void requireExportSpace(long bytes, long available) throws IOException {
+        if (available < FREE_SPACE_MARGIN || bytes > available - FREE_SPACE_MARGIN) throw new IOException("Insufficient space for export");
+    }
     private void save(Uri destination, SaveRequests.Request selected) {
-        boolean success = false; HttpsURLConnection request = null;
+        boolean success = false, destinationAttempted = false; HttpsURLConnection request = null; File staged = null;
         try {
             OriginPolicy policy = origin; if (policy == null || !policy.isDownload(selected.url) || selected.cancelled.get() || selected.generation != generation) throw new IOException();
             request = (HttpsURLConnection) new URL(selected.url).openConnection(); selected.connection = request;
@@ -145,21 +177,39 @@ public final class MainActivity extends Activity {
             if (selected.cookie != null) request.setRequestProperty("Cookie", selected.cookie);
             if (request.getResponseCode() != 200) throw new IOException();
             String expected = OriginPolicy.digest(request.getHeaderField("ETag")); long size = request.getContentLengthLong();
+            File cache = getCacheDir();
+            long budget = stagingBudget(cache.getUsableSpace());
+            if (size > budget) throw new IOException("Insufficient space for verified download");
+            staged = File.createTempFile(STAGE_PREFIX, STAGE_SUFFIX, cache);
+            long verifiedLength;
+            try (InputStream input = request.getInputStream(); OutputStream output = new FileOutputStream(staged)) {
+                verifiedLength = VerifiedDownload.copy(input, output, expected, size, budget, () -> selected.cancelled.get() || selected.generation != generation);
+            }
+            if (staged.length() != verifiedLength || selected.cancelled.get() || selected.generation != generation) throw new IOException("Staged download is incomplete");
+            // The target provider may share the same physical storage as the cache.
+            requireExportSpace(verifiedLength, cache.getUsableSpace());
             savePhase("destination-open-start");
-            try (InputStream input = request.getInputStream(); OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
-                if (output == null) throw new IOException();
-                savePhase("destination-write-start");
-                try { VerifiedDownload.copy(input, output, expected, size, () -> selected.cancelled.get() || selected.generation != generation); }
-                finally { savePhase("destination-close-start"); }
+            try (InputStream input = new FileInputStream(staged)) {
+                destinationAttempted = true;
+                try (OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
+                    if (output == null) throw new IOException();
+                    savePhase("destination-write-start");
+                    try { VerifiedDownload.copy(input, output, expected, verifiedLength, () -> selected.cancelled.get() || selected.generation != generation); }
+                    finally { savePhase("destination-close-start"); }
+                }
             }
             // Reached only when both the copy and resource closure returned normally.
             savePhase("destination-copy-and-close-complete");
-            if (selected.cancelled.get() || selected.generation != generation) throw new IOException("Cancelled while closing destination");
             success = true; showFor(selected.generation, "保存完成，SHA-256 与服务器一致。该校验不替代对发送者的信任。");
-        } catch (Exception error) { showFor(selected.generation, "下载未完成或校验失败；请重新下载，不要使用残留文件。"); }
+        } catch (Exception error) {
+            showFor(selected.generation, destinationAttempted
+                    ? "保存未完成；目标文件可能不完整，请在所选位置手动删除。"
+                    : "下载未完成或校验失败；请重新下载，不要使用残留文件。");
+        }
         finally {
             if (request != null) request.disconnect(); if (selected.connection == request) selected.connection = null;
-            if (!success) {
+            if (staged != null) staged.delete();
+            if (!success && !destinationAttempted) {
                 savePhase("failed-delete-start");
                 try {
                     boolean removed = DocumentsContract.deleteDocument(getContentResolver(), destination);
