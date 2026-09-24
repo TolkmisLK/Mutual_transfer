@@ -78,34 +78,59 @@ public class HttpsExchangeTest {
         }
         throw new AssertionError("Expected system document picker control was not found");
     }
+    private AccessibilityNodeInfo actionableDocumentNode(AccessibilityNodeInfo root, String text) {
+        if (root == null) return null;
+        String pkg = String.valueOf(root.getPackageName());
+        boolean documentUi = pkg.equals("com.android.documentsui") || pkg.equals("com.google.android.documentsui");
+        if (documentUi && root.isVisibleToUser() && root.isEnabled()
+                && (text.equalsIgnoreCase(String.valueOf(root.getText()))
+                    || text.equalsIgnoreCase(String.valueOf(root.getContentDescription())))) {
+            AccessibilityNodeInfo action = root;
+            while (action != null && action.isVisibleToUser() && !action.isClickable()) action = action.getParent();
+            if (action != null && action.isVisibleToUser() && action.isEnabled()) return action;
+        }
+        // A non-clickable title can precede a clickable drawer row with the
+        // same text. Continue through every matching node, not just the first.
+        for (int i = 0; i < root.getChildCount(); i++) {
+            AccessibilityNodeInfo found = actionableDocumentNode(root.getChild(i), text);
+            if (found != null) return found;
+        }
+        return null;
+    }
+    private String documentActionStage(String text) {
+        if ("Show roots".equals(text)) return "open-roots";
+        if ("Downloads".equals(text)) return "select-downloads-root";
+        if ("Save".equals(text)) return "confirm-save";
+        return "select-source-file";
+    }
     private void clickDocument(String text) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         do {
             // DocumentsUI can replace nodes while switching roots. Retry only
             // an unaccepted action against a fresh node, never skip the action.
-            AccessibilityNodeInfo node = documentNode(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow(), text, false);
-            while (node != null && !node.isClickable()) node = node.getParent();
-            if (node != null && node.isEnabled() && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
+            AccessibilityNodeInfo node = actionableDocumentNode(InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow(), text);
+            if (node != null && node.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return;
             Thread.sleep(200);
         } while (System.nanoTime() < deadline);
-        fail("System document picker did not accept the requested action");
+        fail("System document picker did not accept stage " + documentActionStage(text));
     }
-    private String waitDocumentLocation(String sourceName) throws Exception {
+    private String waitDocumentLocation(String sourceName, boolean rootsOpen) throws Exception {
         long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
         do {
             AccessibilityNodeInfo root = InstrumentationRegistry.getInstrumentation().getUiAutomation().getRootInActiveWindow();
-            for (String expected : new String[]{sourceName, "Downloads", "Show roots"}) {
-                if (documentNode(root, expected, false) != null) return expected;
-            }
+            if (actionableDocumentNode(root, sourceName) != null) return sourceName;
+            if (!rootsOpen && actionableDocumentNode(root, "Show roots") != null) return "Show roots";
+            if (actionableDocumentNode(root, "Downloads") != null) return "Downloads";
             Thread.sleep(200);
         } while (System.nanoTime() < deadline);
-        throw new AssertionError("System document picker did not show a Downloads location or source file");
+        throw new AssertionError("System document picker did not show actionable stage "
+                + (rootsOpen ? "downloads-root-or-source" : "roots-or-source"));
     }
     private void selectDownloadedSource(String sourceName) throws Exception {
-        String location = waitDocumentLocation(sourceName);
+        String location = waitDocumentLocation(sourceName, false);
         if ("Show roots".equals(location)) {
             clickDocument("Show roots");
-            location = waitDocumentLocation(sourceName);
+            location = waitDocumentLocation(sourceName, true);
         }
         if ("Downloads".equals(location)) clickDocument("Downloads");
         clickDocument(sourceName);
