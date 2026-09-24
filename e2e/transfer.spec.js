@@ -28,6 +28,18 @@ test.beforeEach(async ({ page }) => {
   await page.getByRole('button', { name: '加入', exact: true }).click();
   await expect(page.locator('#workspace')).toBeVisible();
 });
+test('first-use errors stay beside the relevant controls', async ({ page }) => {
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await page.getByLabel('访问密钥').fill('wrong-test-workspace-key-2026');
+  await page.getByRole('button', { name: '加入', exact: true }).click();
+  await expect(page.locator('#join-status')).toContainText('访问密钥不正确');
+  await expect(page.locator('#workspace')).toBeHidden();
+  await page.getByLabel('访问密钥').fill('browser-test-only-workspace-key-2026');
+  await page.getByRole('button', { name: '加入', exact: true }).click();
+  await expect(page.locator('#workspace')).toBeVisible();
+  await expect(page.locator('#join-status')).toHaveText('');
+  expect(await page.locator('#status').evaluate(el => el.closest('.upload') !== null)).toBe(true);
+});
 test('installed-web worker gives a private offline page and resumes the original upload after reconnect', async ({ page, context }, info) => {
   await page.evaluate(async () => { await navigator.serviceWorker.ready; }); await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
@@ -110,7 +122,7 @@ test('a separate browser pairs once, transfers a file and cannot delegate access
     await guest.getByRole('button', { name: '退出', exact: true }).click();
     await guest.getByLabel('临时配对码', { exact: true }).fill(code);
     await guest.getByRole('button', { name: '配对加入', exact: true }).click();
-    await expect(guest.locator('#status')).toContainText('invalid, expired or already used');
+    await expect(guest.locator('#join-status')).toContainText('配对码无效、已过期或已使用');
     await expect(guest.locator('#workspace')).toBeHidden();
   } finally {
     await guest.evaluate(() => { const input = document.getElementById('pair-code'); if (input) input.value = ''; }).catch(() => {});

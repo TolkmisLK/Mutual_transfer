@@ -42,6 +42,34 @@ public class ClientStartupTest {
         }
         return null;
     }
+    @Test public void recreationDetachesOldWebViewAndCreatesFreshRestrictedView() {
+        try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
+            for (int round = 0; round < 2; round++) {
+                java.util.concurrent.atomic.AtomicReference<MainActivity> previous = new java.util.concurrent.atomic.AtomicReference<>();
+                java.util.concurrent.atomic.AtomicReference<WebView> previousWeb = new java.util.concurrent.atomic.AtomicReference<>();
+                java.util.concurrent.atomic.AtomicReference<ViewGroup> previousParent = new java.util.concurrent.atomic.AtomicReference<>();
+                scenario.onActivity(activity -> {
+                    WebView view = find(activity.getWindow().getDecorView(), WebView.class, null);
+                    assertNotNull(view); assertTrue(view.getParent() instanceof ViewGroup);
+                    previous.set(activity); previousWeb.set(view); previousParent.set((ViewGroup) view.getParent());
+                });
+                scenario.recreate();
+                scenario.onActivity(activity -> {
+                    assertNotSame(previous.get(), activity); assertTrue(previous.get().isDestroyed());
+                    // Inspect the former parent, never call methods on a destroyed WebView.
+                    assertEquals(-1, previousParent.get().indexOfChild(previousWeb.get()));
+                    View root = activity.getWindow().getDecorView(); WebView view = find(root, WebView.class, null);
+                    assertNotNull(view); assertNotSame(previousWeb.get(), view); assertNull(view.getUrl());
+                    assertFalse(view.getSettings().getAllowFileAccess()); assertFalse(view.getSettings().getAllowContentAccess());
+                    assertEquals(WebSettings.MIXED_CONTENT_NEVER_ALLOW, view.getSettings().getMixedContentMode());
+                    find(root, EditText.class, null).setText("http://192.168.1.2:8787");
+                    find(root, Button.class, "连接").performClick();
+                    assertNotNull(find(root, TextView.class, "请输入仅含地址和端口的 HTTPS 网址，不要附带密码、路径或查询参数。"));
+                    assertNull(view.getUrl());
+                });
+            }
+        }
+    }
     @Test public void actualActivityRejectsPlaintextAndUsesRestrictedWebView() throws Exception {
         try (ActivityScenario<MainActivity> scenario = ActivityScenario.launch(MainActivity.class)) {
             scenario.onActivity(activity -> {

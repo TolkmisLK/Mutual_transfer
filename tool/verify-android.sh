@@ -3,7 +3,8 @@ set -euo pipefail
 # The emulator is still alive here. Preserve Gradle's failure; report only a
 # strict source-frame/exception allowlist, never raw logcat or test secrets.
 trap 'result=$?; if (( result != 0 )); then node tool/android-diagnostics.js; fi; exit "$result"' EXIT
-gradle --no-daemon -p android connectedDebugAndroidTest
+# Each reliability round must execute instrumentation, not reuse task outputs.
+gradle --no-daemon -p android connectedDebugAndroidTest --rerun-tasks
 adb pull /data/local/tmp/mutual-transfer-startup.png android/client-startup.png
 node tool/android-fixture.js &
 fixture=$!
@@ -16,5 +17,5 @@ for attempt in {1..60}; do
 done
 test -f android/app/src/androidTestAcceptance/assets/connection.json
 adb reverse tcp:10878 tcp:10878
-gradle --no-daemon -p android -PacceptanceTests connectedAcceptanceAndroidTest
+gradle --no-daemon -p android -PacceptanceTests connectedAcceptanceAndroidTest --rerun-tasks
 adb pull /data/local/tmp/mutual-transfer-https.png android/client-https.png
