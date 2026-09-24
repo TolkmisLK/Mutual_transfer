@@ -75,6 +75,10 @@ public final class MainActivity extends Activity {
         cancel.setOnClickListener(view -> { cancelled.set(true); if (connection != null) connection.disconnect(); });
     }
     private void show(String message) { runOnUiThread(() -> { if (!isDestroyed()) status.setText(message); }); }
+    private void savePhase(String phase) {
+        if ((getApplicationInfo().flags & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0)
+            android.util.Log.i("MutualTransferSave", "phase=" + phase);
+    }
     private boolean safeDocument(Uri uri) {
         if (uri == null || !"content".equals(uri.getScheme()) || uri.getAuthority() == null) return false;
         try {
@@ -114,16 +118,28 @@ public final class MainActivity extends Activity {
             if (cookie != null) request.setRequestProperty("Cookie", cookie);
             if (request.getResponseCode() != 200) throw new IOException();
             String expected = OriginPolicy.digest(request.getHeaderField("ETag")); long size = request.getContentLengthLong();
+            savePhase("destination-open-start");
             try (InputStream input = request.getInputStream(); OutputStream output = getContentResolver().openOutputStream(destination, "wt")) {
                 if (output == null) throw new IOException();
-                VerifiedDownload.copy(input, output, expected, size, () -> cancelled.get() || current != generation);
+                savePhase("destination-write-start");
+                try { VerifiedDownload.copy(input, output, expected, size, () -> cancelled.get() || current != generation); }
+                finally { savePhase("destination-close-start"); }
             }
+            // Reached only when both the copy and resource closure returned normally.
+            savePhase("destination-copy-and-close-complete");
             if (cancelled.get() || current != generation) throw new IOException("Cancelled while closing destination");
             success = true; showFor(current, "保存完成，SHA-256 与服务器一致。该校验不替代对发送者的信任。");
         } catch (Exception error) { showFor(current, "下载未完成或校验失败；请重新下载，不要使用残留文件。"); }
         finally {
             if (request != null) request.disconnect(); if (connection == request) connection = null;
-            if (!success) { try { if (!DocumentsContract.deleteDocument(getContentResolver(), destination)) showFor(current, "未完成文件无法自动清理，请在所选位置手动删除。"); } catch (Exception error) { showFor(current, "未完成文件无法自动清理，请在所选位置手动删除。"); } }
+            if (!success) {
+                savePhase("failed-delete-start");
+                try {
+                    boolean removed = DocumentsContract.deleteDocument(getContentResolver(), destination);
+                    savePhase(removed ? "failed-delete-removed" : "failed-delete-retained");
+                    if (!removed) showFor(current, "未完成文件无法自动清理，请在所选位置手动删除。");
+                } catch (Exception error) { savePhase("failed-delete-error"); showFor(current, "未完成文件无法自动清理，请在所选位置手动删除。"); }
+            }
             runOnUiThread(() -> { if (current == generation && !isDestroyed()) { clearDownload(); getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON); } });
         }
     }

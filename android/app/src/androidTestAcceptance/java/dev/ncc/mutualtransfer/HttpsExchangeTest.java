@@ -27,6 +27,7 @@ import static org.junit.Assert.*;
 /** Real emulator WebView, system DocumentsUI and native TLS against the actual Node service. */
 @RunWith(AndroidJUnit4.class)
 public class HttpsExchangeTest {
+    private void phase(String name) { android.util.Log.i("MutualAcceptance", "phase=" + name); }
     private <T> T find(View view, Class<T> type, String text) {
         if (type.isInstance(view) && (text == null || (view instanceof TextView && ((TextView)view).getText().toString().equals(text)))) return type.cast(view);
         if (view instanceof ViewGroup) for (int i = 0; i < ((ViewGroup)view).getChildCount(); i++) {
@@ -87,6 +88,7 @@ public class HttpsExchangeTest {
         fail("System document picker did not accept the requested action");
     }
     @Test public void realHttpsLoginChunkUploadAndNativeVerifiedDownload() throws Exception {
+        phase("scenario-start");
         JSONObject config;
         try (InputStream input = InstrumentationRegistry.getInstrumentation().getContext().getAssets().open("connection.json")) {
             config = new JSONObject(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
@@ -105,6 +107,7 @@ public class HttpsExchangeTest {
             // Exercise the shipped upload handler and its real two-chunk protocol.
             js(scenario, "(()=>{const bytes=new Uint8Array(4194304+65537);for(let i=0;i<bytes.length;i++)bytes[i]=i%251;const dt=new DataTransfer();dt.items.add(new File([bytes],'android-upload.bin'));const f=document.getElementById('files');f.files=dt.files;f.dispatchEvent(new Event('change'));})()");
             waitJs(scenario, "document.getElementById('status').textContent.includes('android-upload.bin 已上传并通过校验') && !document.getElementById('files').disabled");
+            phase("browser-upload-complete");
             // Publish a generated fixture through the real Downloads provider,
             // then select it using actual system UI (no ActivityResult stubbing).
             android.content.ContentResolver resolver = InstrumentationRegistry.getInstrumentation().getTargetContext().getContentResolver();
@@ -119,13 +122,19 @@ public class HttpsExchangeTest {
             values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 1);
             android.net.Uri source = resolver.insert(android.provider.MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
             assertNotNull(source);
+            phase("source-created");
             try {
                 byte[] fixture = new byte[65537]; for (int i = 0; i < fixture.length; i++) fixture[i] = (byte)(i % 251);
                 try (OutputStream out = resolver.openOutputStream(source)) { assertNotNull(out); out.write(fixture); }
+                phase("source-write-complete");
+                phase("source-publish-start");
                 values.clear(); values.put(android.provider.MediaStore.MediaColumns.IS_PENDING, 0); resolver.update(source, values, null, null);
+                phase("source-published");
                 tapElement(scenario, "#files");
                 clickDocument("Show roots"); clickDocument("Downloads"); clickDocument(sourceName);
                 waitJs(scenario, "document.getElementById('status').textContent.includes(" + JSONObject.quote(sourceName + " 已上传并通过校验") + ") && !document.getElementById('files').disabled");
+                phase("provider-upload-complete");
+                phase("good-save-requested");
                 tapElement(scenario, "a[href='" + config.getString("download") + "']");
                 AccessibilityNodeInfo filename = waitDocumentNode("", true);
                 android.os.Bundle text = new android.os.Bundle(); text.putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, savedName);
@@ -137,6 +146,7 @@ public class HttpsExchangeTest {
                     if (saved.get()) break; Thread.sleep(200);
                 } while (System.nanoTime() < savedDeadline);
                 assertTrue("Native document save did not complete", saved.get());
+                phase("good-save-verified");
                 try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("cat /sdcard/Download/" + savedName);
                      FileInputStream input = new FileInputStream(shell.getFileDescriptor())) {
                     assertArrayEquals(fixture, input.readNBytes(65538));
@@ -144,6 +154,7 @@ public class HttpsExchangeTest {
                 // The same real server now sends a disposable file altered after
                 // completion, with its original ETag. Use actual create-document
                 // UI and the production downloader, not a helper/Activity stub.
+                phase("damaged-save-requested");
                 tapElement(scenario, "a[href='" + config.getString("damagedDownload") + "']");
                 AccessibilityNodeInfo rejectedFilename = waitDocumentNode("", true);
                 android.os.Bundle rejectedText = new android.os.Bundle();
@@ -170,11 +181,14 @@ public class HttpsExchangeTest {
                     if (removed) break; Thread.sleep(200);
                 } while (System.nanoTime() < rejectedDeadline);
                 assertTrue("Failed destination must actually be removed", removed);
+                phase("damaged-save-removed");
                 // Failure cleanup must not touch the earlier successful document.
                 try (android.os.ParcelFileDescriptor shell = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("cat /sdcard/Download/" + savedName);
                      FileInputStream input = new FileInputStream(shell.getFileDescriptor())) { assertArrayEquals(fixture, input.readNBytes(65538)); }
             } finally {
+                phase("source-cleanup-start");
                 resolver.delete(source, null, null);
+                phase("source-cleanup-complete");
                 // Exact unique fixture path in this disposable emulator only.
                 try (android.os.ParcelFileDescriptor cleanup = InstrumentationRegistry.getInstrumentation().getUiAutomation().executeShellCommand("rm -f /sdcard/Download/" + savedName + " /sdcard/Download/" + damagedName);
                      FileInputStream completion = new FileInputStream(cleanup.getFileDescriptor())) { completion.readAllBytes(); }
