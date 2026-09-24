@@ -5,14 +5,29 @@ let paused = false; let uploading = false; let pairingTimer;
 let managementGeneration = 0;
 function clearManagement() { managementGeneration++; $('paired-dialog').close(); $('paired-list').replaceChildren(); $('paired-error').textContent = ''; $('paired-identity').textContent = ''; }
 function clearPairing() { clearTimeout(pairingTimer); $('issued-code').textContent = ''; $('pairing-expiry').textContent = ''; $('pairing-dialog').close(); }
-const say = text => { $('status').textContent = text; };
+const say = text => {
+  const joining = !$('join').hidden;
+  $('join-status').textContent = joining ? text : '';
+  $('status').textContent = joining ? '' : text;
+};
+const messages = {
+  'Incorrect workspace key': '访问密钥不正确。请核对服务电脑终端中的 Workspace key；服务重启后自动生成的密钥会变化。',
+  'Pairing code is invalid, expired or already used': '配对码无效、已过期或已使用。请在已登录设备上重新生成。',
+  'Join the workspace first': '登录已失效，请重新输入当前访问密钥或新的配对码。',
+  'Pairing requires HTTPS except on loopback': '跨设备配对需要受信任的 HTTPS 地址。请先配置服务证书。',
+  'Please wait before trying again': '尝试次数过多，请稍后再试。',
+  'Workspace quota exceeded': '文件空间已满或达到文件数上限。请清理不需要的文件后重试。',
+  'Storage operation failed; check available disk space': '服务电脑存储操作失败。请检查可用磁盘空间，再重新选择原文件续传。',
+};
 const size = n => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
 async function api(url, options = {}) {
-  const response = await fetch(url, { credentials: 'same-origin', ...options });
+  let response;
+  try { response = await fetch(url, { credentials: 'same-origin', ...options }); }
+  catch { throw new Error('无法连接文件空间。请检查网络和服务电脑是否仍在运行。'); }
   const result = await response.json();
   if (!response.ok) {
     if (response.status === 401) { clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true; }
-    throw new Error(result.error || `请求失败 (${response.status})`);
+    throw new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
   }
   return result;
 }

@@ -27,7 +27,7 @@ for (const [relative, expected] of Object.entries(manifest)) {
   const actual = createHash('sha256').update(await fs.readFile(path.join(bundle, relative))).digest('hex');
   assert.equal(actual, expected, 'Packaged file digest: ' + relative);
 }
-for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'src/pairing.js', 'public/app.js', 'tool/portable-launch.js', 'node_modules/@noble/hashes/sha2.js', 'node_modules/@noble/hashes/LICENSE', 'LICENSE']) assert.ok(manifest[required]);
+for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'src/pairing.js', 'public/app.js', 'tool/portable-launch.js', 'node_modules/@noble/hashes/sha2.js', 'node_modules/@noble/hashes/LICENSE', 'LICENSE', 'docs/QUICKSTART.md', 'docs/images/quickstart-login.png', 'docs/images/quickstart-workspace.png', 'docs/images/quickstart-preview.png', 'docs/images/quickstart-pairing.png']) assert.ok(manifest[required]);
 assert.equal(Object.keys(manifest).some(p => /(?:^|\/)(?:data|test|e2e)\//.test(p) || /\.(?:pem|key)$/.test(p)), false);
 const identity = JSON.parse(execFileSync(runtime, ['-p', 'JSON.stringify({version:process.version,arch:process.arch,execPath:process.execPath})'], { encoding: 'utf8', timeout: 10000 }));
 assert.equal(identity.version, 'v24.21.0'); assert.equal(identity.arch, 'x64'); assert.equal(path.resolve(identity.execPath).toLowerCase(), runtime.toLowerCase());

@@ -26,7 +26,8 @@ try {
   Copy-Item -LiteralPath (Join-Path $Node 'LICENSE') -Destination (Join-Path $Bundle 'runtime\NODE-LICENSE.txt')
   $Files = @('package.json', 'LICENSE', 'README.md', 'src/server.js', 'src/store.js', 'src/pairing.js', 'src/data-lease.js',
     'public/index.html', 'public/app.js', 'public/integrity.js', 'public/style.css', 'public/install.js', 'public/service-worker.js', 'public/manifest.webmanifest', 'public/app-icon.svg', 'tool/portable-launch.js',
-    'docs/HTTPS.md', 'docs/PAIRING.md', 'docs/WINDOWS-PORTABLE.md', 'docs/VALIDATION.md', 'docs/DATA-OWNERSHIP.md', 'docs/PROTOCOL.md', 'docs/ROADMAP.md', 'docs/DISK-FULL.md')
+    'docs/HTTPS.md', 'docs/PAIRING.md', 'docs/WINDOWS-PORTABLE.md', 'docs/VALIDATION.md', 'docs/DATA-OWNERSHIP.md', 'docs/PROTOCOL.md', 'docs/ROADMAP.md', 'docs/DISK-FULL.md',
+    'docs/QUICKSTART.md', 'docs/images/quickstart-login.png', 'docs/images/quickstart-workspace.png', 'docs/images/quickstart-preview.png', 'docs/images/quickstart-pairing.png')
   foreach ($File in $Files) {
     $Destination = Join-Path $Bundle $File
     New-Item -ItemType Directory -Path (Split-Path $Destination -Parent) -Force | Out-Null

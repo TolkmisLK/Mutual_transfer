@@ -135,7 +135,17 @@ public final class MainActivity extends Activity {
         web.stopLoading(); web.loadUrl("about:blank"); web.clearHistory(); web.clearCache(true); WebStorage.getInstance().deleteAllData();
         CookieManager.getInstance().removeAllCookies(value -> { if (!isDestroyed() && current == generation) done.run(); });
     }
-    @Override protected void onPause() { web.onPause(); super.onPause(); }
+    @Override protected void onPause() { if (web != null) web.onPause(); super.onPause(); }
     @Override protected void onResume() { super.onResume(); if (web != null) web.onResume(); }
-    @Override protected void onDestroy() { generation++; cancelled.set(true); if (connection != null) connection.disconnect(); if (picker != null) picker.onReceiveValue(null); downloads.close(); web.destroy(); super.onDestroy(); }
+    @Override protected void onDestroy() {
+        generation++; cancelled.set(true); if (connection != null) connection.disconnect();
+        if (picker != null) { picker.onReceiveValue(null); picker = null; }
+        downloads.close();
+        if (web != null) {
+            // Android requires detachment before destroying the WebView.
+            if (web.getParent() instanceof android.view.ViewGroup) ((android.view.ViewGroup) web.getParent()).removeView(web);
+            web.destroy(); web = null;
+        }
+        super.onDestroy();
+    }
 }

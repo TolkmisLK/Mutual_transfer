@@ -2,3 +2,4 @@
 #workspace>.toolbar,#workspace>.toolbar .row{flex-wrap:wrap}#pair-login{margin-top:24px;padding-top:20px;border-top:1px solid var(--line)}#issued-code{display:block;font:700 clamp(17px,4vw,26px)/1.5 ui-monospace,monospace;overflow-wrap:anywhere;padding:16px;background:var(--panel);border:1px solid var(--line);border-radius:10px}#pairing-dialog{width:min(620px,94vw)}#revoke-pairing{white-space:normal}#pairing-error{color:#bd462f}
 
 #device-name{display:block;width:100%;margin-bottom:16px}.paired-session{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:16px 0}.paired-session>div{min-width:0;flex:1 1 220px}.paired-session strong,.paired-session p,#paired-identity{overflow-wrap:anywhere}.paired-session p{font-size:13px;margin:8px 0}#paired-error{color:var(--muted)}
+#join-status:not(:empty),#status:not(:empty){color:var(--accent);margin-bottom:0}
