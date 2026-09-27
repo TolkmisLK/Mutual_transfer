@@ -1,5 +1,7 @@
 # Validation — 2026-09-14 (Asia/Shanghai)
 
+[完整中文记录](VALIDATION.zh-CN.md)
+
 ## Android queued-save cleanup — 2026-09-19 (Asia/Shanghai)
 
 PR #16 candidate `68da3dd9349fb1ab6335caccb8b18afdd9fa03f5` passed [Android CI 35381670016](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35381670016) and all five [service CI jobs 35381669970](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35381669970). The new controlled JVM regression uses a real executor with a held first task and queued second task, invalidates both, closes twice, rejects new tasks and asserts both accepted cleanup paths execute exactly once without starting another transfer. Activity destruction now drains this queue rather than discarding accepted tasks that own a newly created document. Existing lint/build, debug and acceptance emulator cases passed. Artifact `10562586858` was downloaded and its successful queue regression report inspected. No local Java/Android execution is claimed.
