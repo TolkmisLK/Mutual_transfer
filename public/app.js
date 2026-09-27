@@ -1,7 +1,7 @@
 import { sha256 } from '/vendor/sha2.js';
 import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
-let paused = false; let uploading = false; let pairingTimer;
+let paused = false; let uploading = false; let loggingOut = false; let pairingTimer;
 let managementGeneration = 0;
 let workspaceGeneration = 0; let refreshGeneration = 0;
 function clearManagement() { managementGeneration++; $('paired-dialog').close(); $('paired-list').replaceChildren(); $('paired-error').textContent = ''; $('paired-identity').textContent = ''; }
@@ -28,11 +28,13 @@ async function api(url, options = {}) {
   catch { throw new Error('无法连接文件空间。请检查网络和服务电脑是否仍在运行。'); }
   const result = await response.json();
   if (!response.ok) {
+    const error = new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
     if (response.status === 401 && generation === workspaceGeneration) {
       workspaceGeneration++; refreshGeneration++;
       clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true;
+      error.currentAuthFailure = true;
     }
-    throw new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
+    throw error;
   }
   return result;
 }
@@ -54,12 +56,18 @@ async function preview(file, text = false) {
   $('preview-body').append(el);
 }
 async function refresh(expectedGeneration = workspaceGeneration) {
-  if (expectedGeneration !== workspaceGeneration) return;
+  if (loggingOut || expectedGeneration !== workspaceGeneration) return;
   const request = ++refreshGeneration;
-  const session = await api('/api/session');
-  if (expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
-  const { files } = await api('/api/transfers');
-  if (expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
+  let session, files;
+  try {
+    session = await api('/api/session');
+    if (loggingOut || expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
+    ({ files } = await api('/api/transfers'));
+    if (loggingOut || expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
+  } catch (error) {
+    if (error.currentAuthFailure || (!loggingOut && expectedGeneration === workspaceGeneration && request === refreshGeneration)) throw error;
+    return;
+  }
   $('join').hidden = true; $('workspace').hidden = false;
   $('new-pairing').hidden = !session.canPair;
   $('revoke-guests').hidden = !session.canPair;
@@ -152,8 +160,15 @@ $('pairing-dialog').addEventListener('cancel', e => { e.preventDefault(); revoke
 $('refresh').onclick = () => refresh().catch(e => say(e.message));
 $('logout').onclick = async () => {
   if (uploading) { say('请先暂停传输，再退出。'); return; }
+  if (loggingOut) return;
+  loggingOut = true; $('logout').disabled = true; $('refresh').disabled = true;
   workspaceGeneration++; refreshGeneration++;
-  try { await api('/api/session', { method: 'DELETE' }); clearPairing(); clearManagement(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
+  try {
+    await api('/api/session', { method: 'DELETE' });
+    workspaceGeneration++; refreshGeneration++;
+    clearPairing(); clearManagement(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。');
+  } catch (e) { say(e.message); }
+  finally { loggingOut = false; $('logout').disabled = false; $('refresh').disabled = false; }
 };
 $('close').onclick = () => $('preview').close();
 $('preview').addEventListener('close', () => $('preview-body').replaceChildren());
