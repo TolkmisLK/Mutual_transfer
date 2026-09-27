@@ -40,6 +40,26 @@ test('first-use errors stay beside the relevant controls', async ({ page }) => {
   await expect(page.locator('#join-status')).toHaveText('');
   expect(await page.locator('#status').evaluate(el => el.closest('.upload') !== null)).toBe(true);
 });
+test('late file-list refresh cannot reopen the workspace after logout', async ({ page }) => {
+  let release; let requested;
+  const pending = new Promise(resolve => { requested = resolve; });
+  await page.route('**/api/transfers', async route => {
+    const response = await route.fetch();
+    requested();
+    await new Promise(resolve => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await pending;
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.locator('#join')).toBeVisible();
+  const response = page.waitForResponse(reply => reply.url().endsWith('/api/transfers'));
+  release();
+  await response;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator('#workspace')).toBeHidden();
+  await expect(page.locator('#join')).toBeVisible();
+});
 test('installed-web worker gives a private offline page and resumes the original upload after reconnect', async ({ page, context }, info) => {
   await page.evaluate(async () => { await navigator.serviceWorker.ready; }); await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
