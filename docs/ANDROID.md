@@ -16,7 +16,7 @@ Android 预览版 `0.1.1-preview` 的使用步骤：
 
 「取消下载」会停止当前保存。下载先暂存在应用私有缓存中，完整校验后才写入所选位置；校验失败时会尝试删除系统选择器创建的空文件。若写入目标文件已开始后发生错误或取消，应用会提示手动删除可能不完整的文件，避免在系统文件提供器尚未完成关闭回调时立即删除。「断开并清理」会清除本应用网页会话；若系统保存界面已打开，返回的旧保存结果也会尝试清理新建的空文件。重新连接后可正常发起新的保存；上传中断可重新选择相同源文件续传，下载中断需从头开始。此版本仍是预览版；独立实体设备、后台传输和系统进程终止后的清理尚未验证或支持。
 
-Normal Activity destruction invalidates active and queued saves, disconnects active HTTPS and drains accepted tasks so each can attempt removal of its own incomplete document. It does not discard queued saves with `shutdownNow`. This is not a guarantee after OS process death or for a provider that blocks indefinitely; no background transfer service is added. The queue-ordering regression passed as a controlled JVM test in CI, alongside existing real Android HTTPS/document-provider cases; full rotation/background acceptance remains outstanding.
+Normal Activity destruction invalidates active and queued saves, disconnects active HTTPS and drains accepted tasks so each reaches its cleanup path. A failed task attempts to remove its empty document only before opening the destination for writing has been attempted; after that point, the possibly incomplete document is left for manual deletion. It does not discard queued saves with `shutdownNow`. This is not a guarantee after OS process death or for a provider that blocks indefinitely; no background transfer service is added. The queue-ordering regression passed as a controlled JVM test in CI, alongside existing real Android HTTPS/document-provider cases; full rotation/background acceptance remains outstanding.
 
 The `android/` project packages the existing responsive file-space interface in an Android WebView with native document selection and a bounded, checksum-verified download path. It is a client for an already-running Mutual Transfer server, not an Android file server or background transfer service.
 
@@ -58,7 +58,7 @@ PR #13 candidate `9cb04013` additionally passed actual DocumentsUI/Downloads-pro
 
 ## 中文：客户端实现与验收边界
 
-Activity 正常销毁时，会使正在进行及排队中的保存失效、断开活动 HTTPS 请求，并排空已经接收的任务，让每个任务尝试删除自己的不完整文档；不会以 `shutdownNow` 直接丢弃排队保存。这不保证操作系统终止进程后仍能清理，也不能处理无限阻塞的文档提供器；没有增加后台传输服务。队列顺序回归在 CI 中作为受控 JVM 测试通过，同期已有真实 Android HTTPS/文档提供器场景；完整旋转与后台验收仍未完成。
+Activity 正常销毁时，会使正在进行及排队中的保存失效、断开活动 HTTPS 请求，并排空已经接收的任务，让每个任务执行清理流程。失败任务只有在尚未尝试打开目标写入流时才会尝试删除空文档；一旦开始尝试打开目标写入流，可能不完整的文档留待手动删除。不会以 `shutdownNow` 直接丢弃排队保存。这不保证操作系统终止进程后仍能清理，也不能处理无限阻塞的文档提供器；没有增加后台传输服务。队列顺序回归在 CI 中作为受控 JVM 测试通过，同期已有真实 Android HTTPS/文档提供器场景；完整旋转与后台验收仍未完成。
 
 `android/` 项目把现有响应式文件空间界面装入 Android WebView，增加原生文档选择和有界、带校验和验证的下载流程。它是连接已有 Mutual Transfer 服务的客户端，不是 Android 文件服务器或后台传输服务。
 
