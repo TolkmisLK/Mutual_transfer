@@ -40,6 +40,85 @@ test('first-use errors stay beside the relevant controls', async ({ page }) => {
   await expect(page.locator('#join-status')).toHaveText('');
   expect(await page.locator('#status').evaluate(el => el.closest('.upload') !== null)).toBe(true);
 });
+test('late file-list refresh cannot reopen the workspace after logout', async ({ page }) => {
+  let release; let requested;
+  const pending = new Promise(resolve => { requested = resolve; });
+  await page.route('**/api/transfers', async route => {
+    const response = await route.fetch();
+    requested();
+    await new Promise(resolve => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await pending;
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.locator('#join')).toBeVisible();
+  const response = page.waitForResponse(reply => reply.url().endsWith('/api/transfers'));
+  release();
+  await response;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator('#workspace')).toBeHidden();
+  await expect(page.locator('#join')).toBeVisible();
+});
+test('refresh is blocked from logout start through its successful response', async ({ page }) => {
+  let releaseLogout, logoutRequested; let reads = 0; let deletes = 0;
+  const pendingLogout = new Promise(resolve => { logoutRequested = resolve; });
+  await page.route('**/api/session', async route => {
+    if (route.request().method() === 'DELETE') {
+      deletes++;
+      logoutRequested();
+      await new Promise(resolve => { releaseLogout = resolve; });
+      await route.continue();
+    } else { reads++; await route.continue(); }
+  });
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await pendingLogout;
+  await expect(page.getByRole('button', { name: '退出', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeDisabled();
+  // Dispatch directly as well: disabled controls alone must not bypass the refresh guard.
+  await page.evaluate(() => document.getElementById('refresh').dispatchEvent(new MouseEvent('click', { bubbles: true })));
+  releaseLogout();
+  await expect(page.locator('#join')).toBeVisible();
+  await expect(page.locator('#workspace')).toBeHidden();
+  expect(reads).toBe(0); expect(deletes).toBe(1);
+});
+test('failed logout enables a second attempt', async ({ page }) => {
+  let deletes = 0;
+  await page.route('**/api/session', route => {
+    if (route.request().method() === 'DELETE' && ++deletes === 1) return route.abort('failed');
+    return route.continue();
+  });
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.locator('#status')).toContainText('无法连接文件空间');
+  await expect(page.getByRole('button', { name: '退出', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '刷新', exact: true })).toBeEnabled();
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await expect(page.locator('#join')).toBeVisible();
+  await expect(page.locator('#workspace')).toBeHidden();
+  expect(deletes).toBe(2);
+});
+test('old unauthorized refresh cannot hide a new login or replace its status', async ({ page }) => {
+  let releaseOld, oldRequested; let held = false;
+  const pendingOld = new Promise(resolve => { oldRequested = resolve; });
+  await page.route('**/api/transfers', async route => {
+    if (held) { await route.continue(); return; }
+    held = true; oldRequested();
+    await new Promise(resolve => { releaseOld = resolve; });
+    await route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ error: 'Join the workspace first' }) });
+  });
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await pendingOld;
+  await page.getByRole('button', { name: '退出', exact: true }).click();
+  await page.getByLabel('访问密钥').fill('browser-test-only-workspace-key-2026');
+  await page.getByRole('button', { name: '加入', exact: true }).click();
+  await expect(page.locator('#workspace')).toBeVisible();
+  const response = page.waitForResponse(reply => reply.url().endsWith('/api/transfers') && reply.status() === 401);
+  releaseOld(); await response;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(page.locator('#workspace')).toBeVisible();
+  await expect(page.locator('#join')).toBeHidden();
+  await expect(page.locator('#status')).toHaveText('已加入文件空间。');
+});
 test('installed-web worker gives a private offline page and resumes the original upload after reconnect', async ({ page, context }, info) => {
   await page.evaluate(async () => { await navigator.serviceWorker.ready; }); await page.reload();
   await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);

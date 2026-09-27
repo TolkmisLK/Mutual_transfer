@@ -1,8 +1,9 @@
 import { sha256 } from '/vendor/sha2.js';
 import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
-let paused = false; let uploading = false; let pairingTimer;
+let paused = false; let uploading = false; let loggingOut = false; let pairingTimer;
 let managementGeneration = 0;
+let workspaceGeneration = 0; let refreshGeneration = 0;
 function clearManagement() { managementGeneration++; $('paired-dialog').close(); $('paired-list').replaceChildren(); $('paired-error').textContent = ''; $('paired-identity').textContent = ''; }
 function clearPairing() { clearTimeout(pairingTimer); $('issued-code').textContent = ''; $('pairing-expiry').textContent = ''; $('pairing-dialog').close(); }
 const say = text => {
@@ -21,13 +22,19 @@ const messages = {
 };
 const size = n => n < 1024 ? `${n} B` : n < 1024 ** 2 ? `${(n / 1024).toFixed(1)} KB` : n < 1024 ** 3 ? `${(n / 1024 ** 2).toFixed(1)} MB` : `${(n / 1024 ** 3).toFixed(2)} GB`;
 async function api(url, options = {}) {
+  const generation = workspaceGeneration;
   let response;
   try { response = await fetch(url, { credentials: 'same-origin', ...options }); }
   catch { throw new Error('无法连接文件空间。请检查网络和服务电脑是否仍在运行。'); }
   const result = await response.json();
   if (!response.ok) {
-    if (response.status === 401) { clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true; }
-    throw new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
+    const error = new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
+    if (response.status === 401 && generation === workspaceGeneration) {
+      workspaceGeneration++; refreshGeneration++;
+      clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true;
+      error.currentAuthFailure = true;
+    }
+    throw error;
   }
   return result;
 }
@@ -48,9 +55,20 @@ async function preview(file, text = false) {
   el.onerror = () => { $('preview-body').textContent = '此文件无法在浏览器内预览，请下载后打开。'; };
   $('preview-body').append(el);
 }
-async function refresh() {
-  const session = await api('/api/session');
-  const { files } = await api('/api/transfers'); $('join').hidden = true; $('workspace').hidden = false;
+async function refresh(expectedGeneration = workspaceGeneration) {
+  if (loggingOut || expectedGeneration !== workspaceGeneration) return;
+  const request = ++refreshGeneration;
+  let session, files;
+  try {
+    session = await api('/api/session');
+    if (loggingOut || expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
+    ({ files } = await api('/api/transfers'));
+    if (loggingOut || expectedGeneration !== workspaceGeneration || request !== refreshGeneration) return;
+  } catch (error) {
+    if (error.currentAuthFailure || (!loggingOut && expectedGeneration === workspaceGeneration && request === refreshGeneration)) throw error;
+    return;
+  }
+  $('join').hidden = true; $('workspace').hidden = false;
   $('new-pairing').hidden = !session.canPair;
   $('revoke-guests').hidden = !session.canPair;
   $('manage-guests').hidden = !session.canPair;
@@ -69,18 +87,18 @@ async function refresh() {
       if (/\.(png|jpe?g|gif|webp|mp4|webm|mov)$/i.test(file.name)) actions.append(button('预览', () => preview(file)));
       else if (/\.(txt|md|csv|json|log|xml|ya?ml)$/i.test(file.name)) actions.append(button('预览文本', () => preview(file, true)));
     }
-    actions.append(button('删除', async () => { if (confirm(`删除「${file.name}」？其他设备也将无法下载。`)) { await api(`/api/transfers/${file.id}`, { method: 'DELETE' }); await refresh(); } }));
+    actions.append(button('删除', async () => { if (confirm(`删除「${file.name}」？其他设备也将无法下载。`)) { const generation = workspaceGeneration; await api(`/api/transfers/${file.id}`, { method: 'DELETE' }); await refresh(generation); } }));
     row.append(info, actions); $('list').append(row);
   }
 }
 $('login').onsubmit = async e => {
   e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
-  try { await api('/api/session', post({ key: $('key').value })); $('key').value = ''; await refresh(); say('已加入文件空间。'); }
+  try { await api('/api/session', post({ key: $('key').value })); workspaceGeneration++; $('key').value = ''; await refresh(); say('已加入文件空间。'); }
   catch (error) { say(error.message); } finally { b.disabled = false; }
 };
 $('pair-login').onsubmit = async e => {
   e.preventDefault(); const b = e.target.querySelector('button'); b.disabled = true;
-  try { await api('/api/pair', post({ code: $('pair-code').value, name: $('device-name').value })); await refresh(); say('配对成功。此会话 1 小时后过期，可管理空间内全部文件。'); }
+  try { await api('/api/pair', post({ code: $('pair-code').value, name: $('device-name').value })); workspaceGeneration++; await refresh(); say('配对成功。此会话 1 小时后过期，可管理空间内全部文件。'); }
   catch (error) { say(error.message); } finally { $('pair-code').value = ''; b.disabled = false; }
 };
 $('new-pairing').onclick = async () => {
@@ -142,7 +160,15 @@ $('pairing-dialog').addEventListener('cancel', e => { e.preventDefault(); revoke
 $('refresh').onclick = () => refresh().catch(e => say(e.message));
 $('logout').onclick = async () => {
   if (uploading) { say('请先暂停传输，再退出。'); return; }
-  try { await api('/api/session', { method: 'DELETE' }); clearPairing(); clearManagement(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。'); } catch (e) { say(e.message); }
+  if (loggingOut) return;
+  loggingOut = true; $('logout').disabled = true; $('refresh').disabled = true;
+  workspaceGeneration++; refreshGeneration++;
+  try {
+    await api('/api/session', { method: 'DELETE' });
+    workspaceGeneration++; refreshGeneration++;
+    clearPairing(); clearManagement(); $('workspace').hidden = true; $('join').hidden = false; $('list').replaceChildren(); say('已退出。');
+  } catch (e) { say(e.message); }
+  finally { loggingOut = false; $('logout').disabled = false; $('refresh').disabled = false; }
 };
 $('close').onclick = () => $('preview').close();
 $('preview').addEventListener('close', () => $('preview-body').replaceChildren());
