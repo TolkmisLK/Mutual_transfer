@@ -71,6 +71,15 @@ npm run check
 
 技术参考：[Node.js HTTP](https://nodejs.org/api/http.html)、[Node.js 文件流](https://nodejs.org/api/fs.html)、[浏览器 File API](https://developer.mozilla.org/en-US/docs/Web/API/File_API)。
 
-### Android development preview
+## 文档目录
+
+以下文档都有完整中文说明；英文先行的页面可点击页首「中文说明」直接跳转。历史验证记录保留原日期与候选运行编号。
+
+- 上手与协议：[使用教程](docs/QUICKSTART.md)、[v0 协议](docs/PROTOCOL.md)。
+- 连接与客户端：[HTTPS 部署](docs/HTTPS.md)、[临时配对](docs/PAIRING.md)、[可安装网页与离线边界](docs/INSTALLABLE-WEB.md)、[Android 预览客户端](docs/ANDROID.md)、[Android 生命周期](docs/ANDROID-LIFECYCLE.md)。
+- 服务与恢复：[Windows 便携服务](docs/WINDOWS-PORTABLE.md)、[数据目录独占](docs/DATA-OWNERSHIP.md)、[磁盘写满恢复](docs/DISK-FULL.md)。
+- 进度与证据：[验收路线图](docs/ROADMAP.md)、[历史验证记录中文页](docs/VALIDATION.zh-CN.md)（[英文原页](docs/VALIDATION.md)）。
+
+### Android 开发预览版
 
 Android 预览客户端位于 [`android/`](android/)，可连接现有 HTTPS 服务，通过系统文件选择器上传和保存校验过的下载。使用步骤和当前限制见 [Android 说明](docs/ANDROID.md)；目前尚无稳定版安装包。
