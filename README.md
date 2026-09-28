@@ -8,6 +8,8 @@
 
 Windows 免安装服务包已通过 CI 中真实打包进程的上传、正常停止、重启续传和下载校验，包含固定版本 Node 运行时、双击启动入口和独立用户数据目录；它使用浏览器界面，不是原生桌面客户端，尚未完成消费者干净机验收。下载构建产物和具体边界见 [Windows portable 说明](docs/WINDOWS-PORTABLE.md)。
 
+预览版领取入口：[Windows 服务包构建记录](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/ci.yml)、[Android 客户端构建记录](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml)。打开与目标源码提交一致且成功的 `main` 运行，在页面底部下载对应 Artifact；它们不是稳定版发布。服务包与 Android APK 是两个独立产物，Android 客户端仍需要一台运行服务的电脑。安装和校验步骤见[首次使用教程](docs/QUICKSTART.md)与[Android 说明](docs/ANDROID.md)。
+
 客户端提供「安装到手机或电脑」说明与浏览器安装入口，需使用受信任的 HTTPS。断网时只显示重连指南，不离线缓存文件或登录信息；重新连接、重新选择原文件可以续传。这是可安装网页，不是原生手机安装包，实际手机安装和后台传输仍需验收。见 [安装与离线边界](docs/INSTALLABLE-WEB.md)。
 
 ## 运行
