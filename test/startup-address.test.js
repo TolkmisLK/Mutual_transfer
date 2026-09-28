@@ -10,7 +10,7 @@ test('loopback startup prints an openable local URL', () => {
 });
 
 test('LAN startup identifies the listener without presenting a wildcard or certificate-mismatched URL', () => {
-  for (const host of ['0.0.0.0', '::', '192.0.2.10']) {
+  for (const host of ['0.0.0.0', '::', '192.0.2.10', '127.0.0.1', 'localhost']) {
     const result = startupAddress({ host, port: 8787, tls: {} });
     assert.equal(result.url, null);
     assert.doesNotMatch(result.lines.join(' '), /https:\/\//);
