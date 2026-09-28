@@ -6,7 +6,7 @@ The packaged command entry is exercised by Windows CI, including space-containin
 
 The portable ZIP bundles a pinned official Windows x64 Node runtime, application files and the browser hashing modules/licenses. You do not need to install Node or run npm on the destination computer. It is a **console-managed server with a browser UI**, not an Electron/Flutter native desktop client or a signed installer. An Android preview client exists separately; physical-device acceptance and stable native releases remain separate launch gates.
 
-1. Obtain the ZIP and matching `.sha256` from the same successful CI artifact. In PowerShell use `Get-FileHash path-to.zip -Algorithm SHA256` and compare the result to the checksum before extracting.
+1. Open the [Windows service workflow](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/ci.yml), select a successful `main` run for the intended source commit, and download the `mutual-transfer-windows-portable` artifact at the bottom of its page while retained. Extract the artifact container, then find the service ZIP and matching `.sha256` inside it. In PowerShell use `Get-FileHash path-to.zip -Algorithm SHA256` and compare the result to the checksum before extracting the service ZIP.
 2. Extract the **whole folder**, not only `node.exe`. Open `START-WINDOWS.cmd` without administrator rights. The launcher clears inherited Node injection variables for its own process, does not change your system PATH and does not install a service.
 3. A console prints the loopback URL and a private, freshly generated workspace key. Enter that key in the browser; the launcher opens the default browser only for a loopback HTTP configuration. Do not screenshot or share the console key broadly. Browser closure does not stop the server: type `stop` and Enter in the console or press Ctrl+C.
 4. Files/resume checkpoints default to `%LOCALAPPDATA%\MutualTransfer\data`, outside the extracted program folder. Replacing the ZIP or restarting does not delete them. Back up this directory separately and stop the service before moving it. For complete removal, stop the service, remove the program folder, and delete the data directory **only if you intend to delete all stored files**.
@@ -34,12 +34,14 @@ Windows CI 已测试打包后的命令入口，包括带空格的路径、正常
 
 便携 ZIP 内含固定版本的官方 Windows x64 Node 运行时、应用文件，以及浏览器哈希模块与许可证。目标电脑无需安装 Node 或运行 npm。它是**通过控制台管理、浏览器提供界面的服务端**，不是 Electron/Flutter 原生桌面客户端或签名安装程序。Android 预览客户端已另行实现；实体设备验收和稳定原生版发布仍有独立门禁。
 
-1. 从同一次成功 CI 的产物下载 ZIP 和对应 `.sha256`。在 PowerShell 执行 `Get-FileHash path-to.zip -Algorithm SHA256`，比对校验和后再解压。
+1. 打开 [Windows 服务包工作流](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/ci.yml)，选择与目标源码提交一致且成功的 `main` 运行，在页面底部下载 `mutual-transfer-windows-portable` Artifact（保留期内）。先解开 Artifact 容器，取出其中的服务 ZIP 和对应 `.sha256`；在 PowerShell 执行 `Get-FileHash path-to.zip -Algorithm SHA256`，比对校验和后再解压服务 ZIP。
 2. 解压**整个文件夹**，不能只取 `node.exe`。无需管理员权限即可打开 `START-WINDOWS.cmd`。启动器只为自身进程清除继承的 Node 注入环境变量，不修改系统 PATH，也不安装系统服务。
 3. 控制台会显示 loopback 地址和新生成的私有工作区密钥。浏览器中输入该密钥；只有 loopback HTTP 配置下，启动器才会自动打开默认浏览器。不要大范围截图或分享控制台密钥。关闭浏览器不会停止服务；需在控制台输入 `stop` 后按 Enter，或按 Ctrl+C。
 4. 文件和续传检查点默认存于 `%LOCALAPPDATA%\MutualTransfer\data`，位于解压程序目录之外。替换 ZIP 或重启不会删除它们。请单独备份该目录，移动前先停服务。完全移除时，先停服务，再删除程序目录；**只有确实要删除全部已存文件时**才删除数据目录。
 
 默认监听 `127.0.0.1:8787`，手机无法直接访问。局域网使用仍要求运维方自有、可信的 TLS 证书，并且每个客户端访问地址都与证书匹配。启动前在终端设置已有的 `HOST`、`PORT`、`TLS_CERT`、`TLS_KEY`、`ALLOWED_HOSTS`、`MUTUAL_KEY` 和可选 `DATA_DIR` 环境变量；见 [HTTPS.md](HTTPS.md)。程序不会自动修改防火墙或证书信任设置。端口冲突应作为错误处理，不能因此终止别的程序。便携启动器会尊重显式配置的数据目录。
+
+如果设置 `HOST=0.0.0.0` 或 `HOST=::`，控制台显示的是监听范围，不是可供手机输入的 URL。手机应输入证书覆盖、系统信任的服务主机名或 IP 及配置的端口；证书不匹配时先修复地址或证书，不能跳过警告。便携启动器在局域网模式下不会自动打开浏览器。
 
 ### 可复现打包与范围
 

@@ -3,7 +3,7 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
-import { createServer, serverOptions } from '../src/server.js';
+import { createServer, serverOptions, startupAddress } from '../src/server.js';
 
 export async function portableOptions(env = process.env, platform = process.platform) {
   let data = env.DATA_DIR;
@@ -17,13 +17,12 @@ export async function portableOptions(env = process.env, platform = process.plat
 export async function launch() {
   const options = await portableOptions(); const { server } = await createServer(options);
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(options.port, options.host, resolve); });
-  const address = options.host.includes(':') ? '[' + options.host + ']' : options.host;
-  const base = (options.tls ? 'https://' : 'http://') + address + ':' + options.port;
-  console.log('Mutual Transfer portable server: ' + base);
+  const address = startupAddress(options);
+  for (const line of address.lines) console.log(line);
   console.log('Files and resume checkpoints: ' + path.resolve(options.root));
   if (options.generatedKey) console.log('Workspace key (private, changes after restart): ' + options.key);
   console.log('Type stop and press Enter, or press Ctrl+C, to stop the server. Closing the browser does not stop it.');
-  console.log('LAN access requires trusted TLS configuration. Do not bypass certificate or firewall protections.');
+  console.log('Do not bypass certificate or firewall protections.');
   let stopping = false; const input = createInterface({ input: process.stdin });
   function stop() {
     if (stopping) return; stopping = true; input.close();
@@ -35,7 +34,7 @@ export async function launch() {
   // Only the fixed, loopback, non-TLS URL is opened automatically. A LAN TLS
   // deployment needs its operator-selected certificate-matching address.
   if (process.platform === 'win32' && process.env.MUTUAL_NO_OPEN !== '1' && !options.tls && ['127.0.0.1', 'localhost'].includes(options.host)) {
-    const browser = spawn('explorer.exe', [base], { shell: false, detached: true, stdio: 'ignore' });
+    const browser = spawn('explorer.exe', [address.url], { shell: false, detached: true, stdio: 'ignore' });
     browser.on('error', () => console.log('Open the address above in your browser.')); browser.unref();
   }
 }

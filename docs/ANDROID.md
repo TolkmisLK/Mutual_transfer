@@ -6,7 +6,7 @@
 
 Android 预览版 `0.1.1-preview` 的使用步骤：
 
-1. 在 Android 8.0 或更新设备上安装项目提供的预览 APK，并确认系统 WebView 已更新。
+1. 打开 [Android 预览工作流](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml)，选择与目标源码提交一致且成功的 `main` 运行，在页面底部下载 `mutual-transfer-android-debug-preview` Artifact（保留期内）。解开 Artifact 容器，从中取 `app-debug.apk` 和对应 `.sha256`，先在电脑上核对 APK 的 SHA-256，再在 Android 8.0 或更新设备上安装预览 APK，并确认系统 WebView 已更新。此 Debug APK 使用临时 CI 签名，后续构建可能需要先卸载旧版；卸载前自行保留需要的数据。
 2. 在另一台设备启动 Mutual Transfer HTTPS 服务，确保手机信任其证书，且地址中的主机名与证书一致。
 3. 在应用顶部输入服务地址（如 `https://files.example.test:8787`），点击「连接」，再用共享密钥或配对码登录。
 4. 上传时点击页面的文件选择按钮，通过系统文件选择器选取文件，等待显示校验完成。

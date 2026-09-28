@@ -239,12 +239,35 @@ export async function serverOptions(env = process.env) {
   return { key, host, port: Number(portText), root: env.DATA_DIR || './data', tls, allowedHosts, generatedKey };
 }
 
+export function startupAddress(options) {
+  const { host, port, tls } = options;
+  const loopback = host === 'localhost' || host === '::1' || /^127(?:\.\d{1,3}){3}$/.test(host);
+  const scheme = tls ? 'https' : 'http';
+  const address = host.includes(':') ? `[${host}]` : host;
+  if (loopback) {
+    const url = `${scheme}://${address}:${port}`;
+    return {
+      url,
+      lines: [`Mutual Transfer listening on ${url}`, 'This address works only on the service computer. LAN devices need a separately configured listener and trusted HTTPS certificate.'],
+    };
+  }
+  const interfaceName = host === '0.0.0.0' ? 'all IPv4 interfaces' : host === '::' ? 'all IPv6 interfaces' : host;
+  return {
+    url: null,
+    lines: [
+      `Mutual Transfer listening on ${interfaceName}, port ${port} (${scheme.toUpperCase()}).`,
+      tls
+        ? 'On each device, open the server hostname or IP covered by its trusted certificate. The listening address is not necessarily a usable browser address.'
+        : 'Plain HTTP is enabled for a trusted-network development test; traffic is unencrypted and cross-device pairing is unavailable.',
+    ],
+  };
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const options = await serverOptions();
   const { server } = await createServer(options);
   server.listen(options.port, options.host, () => {
-    const address = options.host.includes(':') ? '[' + options.host + ']' : options.host;
-    console.log('Mutual Transfer listening on ' + (options.tls ? 'https' : 'http') + '://' + address + ':' + options.port);
+    for (const line of startupAddress(options).lines) console.log(line);
     if (options.generatedKey) console.log('Workspace key (share only with intended devices): ' + options.key);
   });
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => { server.close(); setTimeout(() => process.exit(0), 5000).unref(); });
