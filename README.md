@@ -88,4 +88,4 @@ npm run check
 
 ### Android 开发预览版
 
-Android 预览客户端位于 [`android/`](android/)，可连接现有 HTTPS 服务，通过系统文件选择器上传和保存校验过的下载。使用步骤和当前限制见 [Android 说明](docs/ANDROID.md)；目前尚无稳定版安装包。
+Android 预览客户端的源码位于仓库的 `android/` 目录，可连接现有 HTTPS 服务，通过系统文件选择器上传和保存校验过的下载。使用步骤和当前限制见 [Android 说明](docs/ANDROID.md)；目前尚无稳定版安装包。
