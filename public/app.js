@@ -247,8 +247,8 @@ $('files').onchange = async e => {
     const cancelledMessage = cancelUpload ? await discardActiveUpload() : null;
     try { await refresh(); } catch (error) { if (!failure && !cancelledMessage) failure = error; }
     if (cancelledMessage) say(cancelledMessage);
+    else if (failure && !(paused && failure.message === '校验已暂停，未发送文件。')) say(`传输已停止：${failure.message}` + (resumeUnavailable ? ' 此浏览器未保存续传记录，刷新后无法自动续传。' : ''));
     else if (paused) say('已暂停。' + (resumeUnavailable ? '此浏览器未保存续传记录，刷新后无法自动续传；请保持页面打开。' : '重新选择原文件可继续。'));
-    else if (failure) say(`传输已停止：${failure.message}` + (resumeUnavailable ? ' 此浏览器未保存续传记录，刷新后无法自动续传。' : ''));
   } finally {
     activeUpload = null; uploading = false; $('files').disabled = false; $('files').value = '';
     $('pause').hidden = true; $('cancel-upload').hidden = true;

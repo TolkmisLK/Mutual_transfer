@@ -250,6 +250,16 @@ test('cancel waits for the current chunk and removes its incomplete transfer', a
   expect((await page.evaluate(async () => (await (await fetch('/api/transfers')).json()).files)).find(file => file.id === before.id)).toBeUndefined();
   expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('mutual-transfer:v2:')))).toEqual([]);
 });
+test('pause does not conceal a simultaneous network failure', async ({ page }, info) => {
+  const name = `pause-failure-${info.project.name}.bin`; const bytes = Buffer.from('retry after network failure');
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => { reached(); await new Promise(resolve => { release = resolve; }); await route.abort('failed'); });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes }); await held;
+  await page.getByRole('button', { name: '暂停', exact: true }).click(); release();
+  await expect(page.locator('#status')).toContainText('传输已停止：无法连接文件空间');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].offset).toBe(0);
+});
 test('blocked deletion keeps the incomplete transfer visible and does not claim cancellation succeeded', async ({ page }, info) => {
   const name = `retained-${info.project.name}.bin`; const bytes = Buffer.alloc(5 * 1024 * 1024, 23);
   let release, reached; const held = new Promise(resolve => { reached = resolve; });
