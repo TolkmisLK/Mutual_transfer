@@ -20,6 +20,8 @@ All `/api` operations require a valid workspace session cookie or `Authorization
 
 On 409, re-read the persisted offset; do not blindly resend at a stale position. If a chunk response is lost, the server may already have committed it. Restart truncates uncommitted trailing bytes back to the saved offset. Completion is idempotent. Final hashing streams from disk; it does not load the complete file in memory.
 
+Browser Pause waits for the current chunk and retains its checkpoint. Cancel waits for that chunk, then requests deletion of only the active incomplete transfer. A failed or lost DELETE response is reported as unconfirmed; clients must re-read the file list and check the record before claiming cleanup. An unreadable existing checkpoint stops the upload instead of creating a duplicate. On final SHA-256 mismatch (422), the browser requests deletion of the current corrupt transfer and clears its local resume mapping only after a confirmed DELETE. With browser storage unavailable, a transfer can finish in the current page but cannot automatically resume after a reload.
+
 The data directory is private application state. Run one server process against it; do not mount it into multiple writable servers. Metadata and data must be backed up together with the service stopped. Files are not encrypted at rest by this application; use host disk encryption where required.
 
 Source hashes are lowercase 64-character SHA-256. For backward compatibility an omitted source hash is accepted, but completion then sets `integrityVerified: false`; it must never be displayed as source-verified. The new browser UI hashes the source incrementally, keys local resumptions by that content digest, sends per-chunk digests and verifies the final server result. Older filename/size-only local resumptions are not reused.
@@ -45,6 +47,8 @@ Source hashes are lowercase 64-character SHA-256. For backward compatibility an 
 | `DELETE /api/transfers/:id` | 无 | 删除文件并释放预留容量 |
 
 收到 409 后应重新读取服务端保存的偏移，不得按过期偏移盲目重发。分块响应丢失时，服务端可能已经提交该块。重启恢复会把未提交的尾部字节截断到已保存偏移。完成操作是幂等的；最终哈希从磁盘流式计算，不把整个文件载入内存。
+
+浏览器「暂停」会等当前文件块完成并保留断点。「取消」会等当前文件块结束后，仅请求删除当前未完成上传。DELETE 失败或响应丢失时只能报告清理未确认；客户端应重新读取文件列表并核对记录。已有断点暂时无法读取时会停止上传，不会另建重复记录。最终 SHA-256 不符（422）时，浏览器请求删除本次损坏上传，只有确认删除后才清除本地续传关联。浏览器本地存储不可用时，当前页面可以传完，但刷新后不能自动续传。
 
 数据目录是应用的私有状态，只能由一个服务进程使用，不可同时挂载给多个可写服务。备份元数据和文件时应先停服务，再一起备份。应用不加密磁盘上的文件，需要时使用主机磁盘加密。
 
