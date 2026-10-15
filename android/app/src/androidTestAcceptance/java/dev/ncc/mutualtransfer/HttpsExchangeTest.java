@@ -50,14 +50,114 @@ public class HttpsExchangeTest {
     }
     private void tapElement(ActivityScenario<MainActivity> scenario, String selector) throws Exception {
         String quoted = JSONObject.quote(selector);
-        js(scenario, "document.querySelector(" + quoted + ").scrollIntoView({block:'center'})");
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-        JSONObject point = new JSONObject(js(scenario, "(()=>{const r=document.querySelector(" + quoted + ").getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+r.height/2)*devicePixelRatio}})()"));
-        int[] location = new int[2]; scenario.onActivity(a -> find(a.getWindow().getDecorView(), WebView.class, null).getLocationOnScreen(location));
-        long time = SystemClock.uptimeMillis(); float x = location[0] + (float)point.getDouble("x"), y = location[1] + (float)point.getDouble("y");
+        android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        long focusDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicBoolean shown = new java.util.concurrent.atomic.AtomicBoolean();
+        float x = Float.NaN, y = Float.NaN;
+        String geometry = "<unavailable>";
+        boolean ready = false;
+        do {
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                focused.set(decor.hasWindowFocus()); shown.set(decor.isShown());
+            });
+            if (!focused.get() || !shown.get()) { Thread.sleep(100); continue; }
+
+            // Focus changes can resize or move the WebView (for example when an
+            // external window or keyboard closes), so derive fresh coordinates
+            // only after the target window is visible and focused.
+            js(scenario, "(()=>{const e=document.querySelector(" + quoted + ");"
+                    + "e.scrollIntoView({block:'center',inline:'center'});const v=window.visualViewport;"
+                    + "if(v){const r=e.getBoundingClientRect();window.scrollBy("
+                    + "r.left+r.width/2-(v.offsetLeft+v.width/2),"
+                    + "r.top+r.height/2-(v.offsetTop+v.height/2));}})()");
+            instrumentation.waitForIdleSync();
+            JSONObject point = new JSONObject(js(scenario, "(()=>{const r=document.querySelector(" + quoted + ").getBoundingClientRect();"
+                    + "const v=window.visualViewport;return {left:r.left,top:r.top,right:r.right,bottom:r.bottom,"
+                    + "x:r.left+r.width/2,y:r.top+r.height/2,viewportLeft:v?v.offsetLeft:0,viewportTop:v?v.offsetTop:0,"
+                    + "viewportWidth:v?v.width:innerWidth,viewportHeight:v?v.height:innerHeight,viewportScale:v?v.scale:1,"
+                    + "innerWidth:innerWidth,innerHeight:innerHeight,scrollX:scrollX,scrollY:scrollY,dpr:devicePixelRatio}})()"));
+            int[] location = new int[2];
+            android.graphics.Rect visible = new android.graphics.Rect();
+            int[] webSize = new int[2];
+            int[] webScroll = new int[2];
+            int[] insetState = new int[] {-1, -1, -1, -1, -1};
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                WebView web = find(decor, WebView.class, null);
+                focused.set(decor.hasWindowFocus()); shown.set(decor.isShown() && web.isShown() && web.getLocalVisibleRect(visible));
+                web.getLocationOnScreen(location);
+                webSize[0] = web.getWidth(); webSize[1] = web.getHeight();
+                webScroll[0] = web.getScrollX(); webScroll[1] = web.getScrollY();
+                android.view.WindowInsets insets = decor.getRootWindowInsets();
+                if (insets != null) {
+                    insetState[0] = insets.getSystemWindowInsetBottom();
+                    if (android.os.Build.VERSION.SDK_INT >= 30) {
+                        insetState[1] = insets.getInsets(android.view.WindowInsets.Type.ime()).bottom;
+                        insetState[2] = insets.getInsets(android.view.WindowInsets.Type.systemBars()).bottom;
+                        insetState[3] = insets.isVisible(android.view.WindowInsets.Type.ime()) ? 1 : 0;
+                    }
+                }
+                insetState[4] = ((View)web.getParent()).getPaddingBottom();
+            });
+            double viewportLeft = point.getDouble("viewportLeft"), viewportTop = point.getDouble("viewportTop");
+            double viewportWidth = point.getDouble("viewportWidth"), viewportHeight = point.getDouble("viewportHeight");
+            double cssX = point.getDouble("x") - viewportLeft, cssY = point.getDouble("y") - viewportTop;
+            double cssToView = viewportWidth > 0 ? webSize[0] / viewportWidth : Double.NaN;
+            float localX = (float)(cssX * cssToView), localY = (float)(cssY * cssToView);
+            x = location[0] + localX; y = location[1] + localY;
+            boolean domCenterVisible = cssX >= 0 && cssX < viewportWidth && cssY >= 0 && cssY < viewportHeight;
+            // View.getLocalVisibleRect uses the View's scrolled drawing coordinates.
+            // The DOM point above is relative to the currently displayed WebView
+            // viewport, so remove the native scroll before comparing the two.
+            android.graphics.Rect viewportVisible = new android.graphics.Rect(visible);
+            viewportVisible.offset(-webScroll[0], -webScroll[1]);
+            ready = focused.get() && shown.get() && domCenterVisible
+                    && viewportVisible.contains(Math.round(localX), Math.round(localY));
+            geometry = "screen=(" + x + "," + y + "), local=(" + localX + "," + localY + ")"
+                    + ", rawLocalVisibleRect=" + visible.toShortString()
+                    + ", viewportVisibleRect=" + viewportVisible.toShortString()
+                    + ", webSize=(" + webSize[0] + "," + webSize[1] + ")"
+                    + ", webScroll=(" + webScroll[0] + "," + webScroll[1] + "), domRect=("
+                    + point.getDouble("left") + "," + point.getDouble("top") + ","
+                    + point.getDouble("right") + "," + point.getDouble("bottom") + "), visualViewport=("
+                    + viewportLeft + "," + viewportTop + "," + viewportWidth + "," + viewportHeight
+                    + ",scale=" + point.getDouble("viewportScale") + "), innerViewport=("
+                    + point.getDouble("innerWidth") + "," + point.getDouble("innerHeight") + ")"
+                    + ", pageScroll=(" + point.getDouble("scrollX") + "," + point.getDouble("scrollY") + ")"
+                    + ", dpr=" + point.getDouble("dpr") + ", insets=(systemBottom=" + insetState[0]
+                    + ",imeBottom=" + insetState[1] + ",systemBarsBottom=" + insetState[2]
+                    + ",imeVisible=" + insetState[3] + ",rootPaddingBottom=" + insetState[4] + ")";
+            if (!ready) Thread.sleep(100);
+        } while (!ready && System.nanoTime() < focusDeadline);
+        if (!ready) {
+            AccessibilityNodeInfo active = instrumentation.getUiAutomation().getRootInActiveWindow();
+            String activePackage = active == null ? "<none>" : String.valueOf(active.getPackageName());
+            throw new AssertionError("Target window did not become focused with a visible tap coordinate: activeWindowPackage="
+                    + activePackage + ", targetHasWindowFocus=" + focused.get() + ", decorAndWebVisible=" + shown.get()
+                    + ", geometry=" + geometry);
+        }
+        long time = SystemClock.uptimeMillis();
         MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, x, y, 0);
         MotionEvent up = MotionEvent.obtain(time, time + 50, MotionEvent.ACTION_UP, x, y, 0);
-        try { InstrumentationRegistry.getInstrumentation().sendPointerSync(down); InstrumentationRegistry.getInstrumentation().sendPointerSync(up); }
+        String action = "ACTION_DOWN";
+        try {
+            instrumentation.sendPointerSync(down); action = "ACTION_UP";
+            instrumentation.sendPointerSync(up);
+        } catch (RuntimeException error) {
+            AccessibilityNodeInfo active = instrumentation.getUiAutomation().getRootInActiveWindow();
+            String activePackage = active == null ? "<none>" : String.valueOf(active.getPackageName());
+            try {
+                scenario.onActivity(activity -> {
+                    View decor = activity.getWindow().getDecorView();
+                    focused.set(decor.hasWindowFocus()); shown.set(decor.isShown());
+                });
+            } catch (RuntimeException ignored) { focused.set(false); shown.set(false); }
+            throw new AssertionError("Pointer injection failed without replaying " + action + ": activeWindowPackage="
+                    + activePackage + ", targetHasWindowFocus=" + focused.get() + ", decorVisible=" + shown.get()
+                    + ", geometry=" + geometry, error);
+        }
         finally { down.recycle(); up.recycle(); }
     }
     private AccessibilityNodeInfo documentNode(AccessibilityNodeInfo node, String text, boolean editable) {

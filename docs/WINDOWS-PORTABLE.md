@@ -1,5 +1,7 @@
 # Windows portable server preview
 
+Windows 预览包的长期下载入口：[Releases](https://github.com/TolkmisLK/Mutual_transfer/releases)（`windows-v` 标签）；[发布与校验说明](PREVIEW-RELEASE.md)。 / Windows preview downloads use `windows-v` tags on Releases; see the linked release and checksum guide.
+
 [中文说明](#zh)
 
 The packaged command entry is exercised by Windows CI, including space-containing paths, normal stop and failure exit codes. This does not yet establish Explorer double-click behavior or the user's default browser association; see [VALIDATION.md](VALIDATION.md).

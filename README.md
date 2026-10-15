@@ -1,5 +1,7 @@
 # Mutual Transfer
 
+Windows 预览包的长期下载入口：[Releases](https://github.com/TolkmisLK/Mutual_transfer/releases)（`windows-v` 标签）；[发布与校验说明](docs/PREVIEW-RELEASE.md)。 / Windows preview downloads use `windows-v` tags on Releases; see the linked release and checksum guide.
+
 在局域网内，从电脑、手机或平板发送文件，并在另一台设备下载。
 
 第一次使用请看 [带截图的使用教程](docs/QUICKSTART.md)：启动服务、加入文件空间、上传下载、断点续传和配对新设备。
