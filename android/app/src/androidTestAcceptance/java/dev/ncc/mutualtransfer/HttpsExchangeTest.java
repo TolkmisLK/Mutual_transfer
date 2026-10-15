@@ -50,14 +50,65 @@ public class HttpsExchangeTest {
     }
     private void tapElement(ActivityScenario<MainActivity> scenario, String selector) throws Exception {
         String quoted = JSONObject.quote(selector);
-        js(scenario, "document.querySelector(" + quoted + ").scrollIntoView({block:'center'})");
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync();
-        JSONObject point = new JSONObject(js(scenario, "(()=>{const r=document.querySelector(" + quoted + ").getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+r.height/2)*devicePixelRatio}})()"));
-        int[] location = new int[2]; scenario.onActivity(a -> find(a.getWindow().getDecorView(), WebView.class, null).getLocationOnScreen(location));
-        long time = SystemClock.uptimeMillis(); float x = location[0] + (float)point.getDouble("x"), y = location[1] + (float)point.getDouble("y");
+        android.app.Instrumentation instrumentation = InstrumentationRegistry.getInstrumentation();
+        long focusDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+        java.util.concurrent.atomic.AtomicBoolean focused = new java.util.concurrent.atomic.AtomicBoolean();
+        java.util.concurrent.atomic.AtomicBoolean shown = new java.util.concurrent.atomic.AtomicBoolean();
+        float x = Float.NaN, y = Float.NaN;
+        boolean ready = false;
+        do {
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                focused.set(decor.hasWindowFocus()); shown.set(decor.isShown());
+            });
+            if (!focused.get() || !shown.get()) { Thread.sleep(100); continue; }
+
+            // Focus changes can resize or move the WebView (for example when an
+            // external window or keyboard closes), so derive fresh coordinates
+            // only after the target window is visible and focused.
+            js(scenario, "document.querySelector(" + quoted + ").scrollIntoView({block:'center'})");
+            instrumentation.waitForIdleSync();
+            JSONObject point = new JSONObject(js(scenario, "(()=>{const r=document.querySelector(" + quoted + ").getBoundingClientRect();return {x:(r.left+r.width/2)*devicePixelRatio,y:(r.top+r.height/2)*devicePixelRatio}})()"));
+            int[] location = new int[2];
+            android.graphics.Rect visible = new android.graphics.Rect();
+            scenario.onActivity(activity -> {
+                View decor = activity.getWindow().getDecorView();
+                WebView web = find(decor, WebView.class, null);
+                focused.set(decor.hasWindowFocus()); shown.set(decor.isShown() && web.isShown() && web.getLocalVisibleRect(visible));
+                web.getLocationOnScreen(location);
+            });
+            float localX = (float)point.getDouble("x"), localY = (float)point.getDouble("y");
+            x = location[0] + localX; y = location[1] + localY;
+            ready = focused.get() && shown.get() && visible.contains(Math.round(localX), Math.round(localY));
+            if (!ready) Thread.sleep(100);
+        } while (!ready && System.nanoTime() < focusDeadline);
+        if (!ready) {
+            AccessibilityNodeInfo active = instrumentation.getUiAutomation().getRootInActiveWindow();
+            String activePackage = active == null ? "<none>" : String.valueOf(active.getPackageName());
+            throw new AssertionError("Target window did not become focused with a visible tap coordinate: activeWindowPackage="
+                    + activePackage + ", targetHasWindowFocus=" + focused.get() + ", decorAndWebVisible=" + shown.get()
+                    + ", coordinates=(" + x + "," + y + ")");
+        }
+        long time = SystemClock.uptimeMillis();
         MotionEvent down = MotionEvent.obtain(time, time, MotionEvent.ACTION_DOWN, x, y, 0);
         MotionEvent up = MotionEvent.obtain(time, time + 50, MotionEvent.ACTION_UP, x, y, 0);
-        try { InstrumentationRegistry.getInstrumentation().sendPointerSync(down); InstrumentationRegistry.getInstrumentation().sendPointerSync(up); }
+        String action = "ACTION_DOWN";
+        try {
+            instrumentation.sendPointerSync(down); action = "ACTION_UP";
+            instrumentation.sendPointerSync(up);
+        } catch (RuntimeException error) {
+            AccessibilityNodeInfo active = instrumentation.getUiAutomation().getRootInActiveWindow();
+            String activePackage = active == null ? "<none>" : String.valueOf(active.getPackageName());
+            try {
+                scenario.onActivity(activity -> {
+                    View decor = activity.getWindow().getDecorView();
+                    focused.set(decor.hasWindowFocus()); shown.set(decor.isShown());
+                });
+            } catch (RuntimeException ignored) { focused.set(false); shown.set(false); }
+            throw new AssertionError("Pointer injection failed without replaying " + action + ": activeWindowPackage="
+                    + activePackage + ", targetHasWindowFocus=" + focused.get() + ", decorVisible=" + shown.get()
+                    + ", coordinates=(" + x + "," + y + ")", error);
+        }
         finally { down.recycle(); up.recycle(); }
     }
     private AccessibilityNodeInfo documentNode(AccessibilityNodeInfo node, String text, boolean editable) {
