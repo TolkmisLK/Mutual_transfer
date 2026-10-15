@@ -5,6 +5,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { createServer } from 'node:net';
 import path from 'node:path';
 import os from 'node:os';
+import { verifyPortableDocLinks } from './portable-doc-links.js';
 
 // Called on a freshly extracted ZIP, not on a checkout or a production store.
 if (process.platform !== 'win32' || !process.argv[2]) throw new Error('Requires Windows and an extracted portable bundle directory');
@@ -27,7 +28,8 @@ for (const [relative, expected] of Object.entries(manifest)) {
   const actual = createHash('sha256').update(await fs.readFile(path.join(bundle, relative))).digest('hex');
   assert.equal(actual, expected, 'Packaged file digest: ' + relative);
 }
-for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'src/pairing.js', 'public/app.js', 'tool/portable-launch.js', 'node_modules/@noble/hashes/sha2.js', 'node_modules/@noble/hashes/LICENSE', 'LICENSE', 'docs/QUICKSTART.md', 'docs/images/quickstart-login.png', 'docs/images/quickstart-workspace.png', 'docs/images/quickstart-preview.png', 'docs/images/quickstart-pairing.png']) assert.ok(manifest[required]);
+for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'src/pairing.js', 'public/app.js', 'tool/portable-launch.js', 'node_modules/@noble/hashes/sha2.js', 'node_modules/@noble/hashes/LICENSE', 'LICENSE', 'README.md', 'docs/PREVIEW-RELEASE.md', 'docs/WINDOWS-PORTABLE.md', 'docs/VALIDATION.md', 'docs/VALIDATION.zh-CN.md', 'docs/ANDROID.md', 'docs/ANDROID-LIFECYCLE.md', 'docs/INSTALLABLE-WEB.md', 'docs/QUICKSTART.md', 'docs/images/quickstart-login.png', 'docs/images/quickstart-workspace.png', 'docs/images/quickstart-preview.png', 'docs/images/quickstart-pairing.png']) assert.ok(manifest[required]);
+const docLinks = await verifyPortableDocLinks(bundle, Object.keys(manifest));
 assert.equal(Object.keys(manifest).some(p => /(?:^|\/)(?:data|test|e2e)\//.test(p) || /\.(?:pem|key)$/.test(p)), false);
 const identity = JSON.parse(execFileSync(runtime, ['-p', 'JSON.stringify({version:process.version,arch:process.arch,execPath:process.execPath})'], { encoding: 'utf8', timeout: 10000 }));
 assert.equal(identity.version, 'v24.21.0'); assert.equal(identity.arch, 'x64'); assert.equal(path.resolve(identity.execPath).toLowerCase(), runtime.toLowerCase());
@@ -101,6 +103,7 @@ try {
   assert.equal((await fs.stat(path.join(fixture, 'MutualTransfer', 'data', item.id + '.data'))).size, bytes.length);
   await assert.rejects(fs.stat(path.join(bundle, 'data')), { code: 'ENOENT' });
   console.log(JSON.stringify({ platform: process.platform, runtimeVersion: identity.version, runtimeArch: identity.arch, manifestFilesVerified: Object.keys(manifest).length,
+    ...docLinks,
     actualPackagedProcess: true, defaultUserDataIsolated: true, bytes: bytes.length, restartedResumeAndHashMatch: true, previousSessionInvalidated: true, normalStdinExit: true,
     commandLauncherTested: true, inheritedNodeOptionsCleared: true, commandFailureExitPreserved: true,
     browserAutoOpenTested: false, cleanMachineTested: false, physicalLanTested: false }));

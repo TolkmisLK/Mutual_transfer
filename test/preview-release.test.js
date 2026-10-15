@@ -50,13 +50,14 @@ test('archive checksum rejects altered bytes', async t => {
 
 test('archive paths and packaged process evidence are required', () => {
   const prefix = 'mutual-transfer-0.1.0-preview-windows-x64/';
-  const files = ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'public/app.js', 'FILES.sha256.json', 'LICENSE'].map(p => prefix+p);
+  const files = ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'public/app.js', 'FILES.sha256.json', 'LICENSE', 'README.md', 'docs/PREVIEW-RELEASE.md', 'docs/WINDOWS-PORTABLE.md', 'docs/VALIDATION.zh-CN.md', 'docs/ANDROID.md', 'docs/ANDROID-LIFECYCLE.md', 'docs/INSTALLABLE-WEB.md', 'docs/QUICKSTART.md'].map(p => prefix+p);
   verifyWindowsEntries(files, '0.1.0');
   for (const entry of ['../outside', 'data/private.data', '.env.local', 'test-results/trace.zip', 'server.key']) assert.throws(() => verifyWindowsEntries([...files,prefix+entry], '0.1.0'));
-  const report = { platform:'win32',runtimeVersion:'v24.21.0',runtimeArch:'x64',manifestFilesVerified:37,bytes:4259841,
+  const report = { platform:'win32',runtimeVersion:'v24.21.0',runtimeArch:'x64',manifestFilesVerified:42,markdownFilesVerified:15,localLinksVerified:40,bytes:4259841,
     actualPackagedProcess:true,defaultUserDataIsolated:true,restartedResumeAndHashMatch:true,previousSessionInvalidated:true,normalStdinExit:true,commandLauncherTested:true,inheritedNodeOptionsCleared:true,commandFailureExitPreserved:true,
     browserAutoOpenTested:false,cleanMachineTested:false,physicalLanTested:false };
   verifyReport(report);
   assert.throws(() => verifyReport({...report,restartedResumeAndHashMatch:false}));
+  assert.throws(() => verifyReport({...report,localLinksVerified:0}));
   assert.throws(() => verifyReport({...report,physicalLanTested:true}));
 });

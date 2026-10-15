@@ -62,7 +62,7 @@ export async function verifyChecksum(zip, checksum) {
 
 export function verifyWindowsEntries(entries, version) {
   const prefix = `mutual-transfer-${version}-preview-windows-x64/`;
-  for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'public/app.js', 'FILES.sha256.json', 'LICENSE'])
+  for (const required of ['runtime/node.exe', 'runtime/NODE-LICENSE.txt', 'START-WINDOWS.cmd', 'src/server.js', 'public/app.js', 'FILES.sha256.json', 'LICENSE', 'README.md', 'docs/PREVIEW-RELEASE.md', 'docs/WINDOWS-PORTABLE.md', 'docs/VALIDATION.zh-CN.md', 'docs/ANDROID.md', 'docs/ANDROID-LIFECYCLE.md', 'docs/INSTALLABLE-WEB.md', 'docs/QUICKSTART.md'])
     assert.ok(entries.includes(prefix + required), `Missing ${required}`);
   for (const entry of entries) {
     assert.ok(entry.startsWith(prefix));
@@ -76,7 +76,9 @@ export function verifyReport(report) {
   assert.equal(report.platform, 'win32');
   assert.equal(report.runtimeVersion, 'v24.21.0');
   assert.equal(report.runtimeArch, 'x64');
-  assert.ok(report.manifestFilesVerified > 20);
+  assert.ok(report.manifestFilesVerified >= 42);
+  assert.ok(report.markdownFilesVerified >= 15);
+  assert.ok(report.localLinksVerified >= 40);
   assert.equal(report.bytes, 4259841);
   for (const key of ['actualPackagedProcess', 'defaultUserDataIsolated', 'restartedResumeAndHashMatch', 'previousSessionInvalidated', 'normalStdinExit', 'commandLauncherTested', 'inheritedNodeOptionsCleared', 'commandFailureExitPreserved']) assert.equal(report[key], true, key);
   for (const key of ['browserAutoOpenTested', 'cleanMachineTested', 'physicalLanTested']) assert.equal(report[key], false, key);
