@@ -40,9 +40,20 @@ async function api(url, options = {}) {
   return result;
 }
 const post = value => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
-function savedUploadId(key) { try { return localStorage.getItem(key); } catch { return null; } }
-function rememberUpload(key, id) { try { localStorage.setItem(key, id); return true; } catch { return false; } }
-function forgetUpload(key, id) { try { if (localStorage.getItem(key) === id) localStorage.removeItem(key); } catch { /* Storage is optional. */ } }
+const inPageUploads = new Map();
+function savedUploadId(key) {
+  if (inPageUploads.has(key)) return inPageUploads.get(key);
+  try { const id = localStorage.getItem(key); if (id) inPageUploads.set(key, id); return id; }
+  catch { return null; }
+}
+function rememberUpload(key, id) {
+  inPageUploads.set(key, id);
+  try { localStorage.setItem(key, id); return true; } catch { return false; }
+}
+function forgetUpload(key, id) {
+  if (inPageUploads.get(key) === id) inPageUploads.delete(key);
+  try { if (localStorage.getItem(key) === id) localStorage.removeItem(key); } catch { /* Storage is optional. */ }
+}
 function button(text, action) {
   const b = document.createElement('button'); b.className = 'secondary'; b.textContent = text;
   b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { say(e.message); } finally { b.disabled = false; } }; return b;

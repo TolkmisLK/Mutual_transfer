@@ -286,6 +286,27 @@ test('unavailable browser storage does not stop a live upload', async ({ page },
   release();
   await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
 });
+test('storage-restricted upload resumes the same server record within the open page', async ({ page }, info) => {
+  await page.evaluate(() => { for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new DOMException('blocked', 'SecurityError'); }; });
+  const name = `restricted-resume-${info.project.name}.bin`; const bytes = Buffer.alloc(4 * 1024 * 1024 + 37, 17);
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => {
+    const response = await route.fetch(); reached();
+    await new Promise(resolve => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes }); await held;
+  const original = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.find(file => file.name === name), name);
+  expect(original.offset).toBe(4 * 1024 * 1024);
+  await page.getByRole('button', { name: '暂停', exact: true }).click(); release();
+  await expect(page.locator('#status')).toContainText('刷新后无法自动续传');
+  await page.unroute('**/chunk');
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].id).toBe(original.id);
+  expect(files[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+});
 test('a separate browser pairs once, transfers a file and cannot delegate access', async ({ page, browser }, info) => {
   const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const guest = await guestContext.newPage();
