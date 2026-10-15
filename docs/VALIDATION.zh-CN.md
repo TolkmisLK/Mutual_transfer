@@ -2,6 +2,14 @@
 
 [English](VALIDATION.md) · 本页按英文原记录的日期、候选提交和运行编号翻译；各条“通过”只代表当时列明的环境和门禁，不表示此刻最新构建或实体设备已经验收。
 
+## Windows 公开预览版与 Android 点击坐标门禁 — 2026-10-15（Asia/Shanghai）
+
+[PR #26](https://github.com/TolkmisLK/Mutual_transfer/pull/26) 的中间版本在 [Android CI 38723320359](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38723320359) 第 1 轮验收中未通过点击可见坐标门禁。断言记录显示目标应用窗口已有焦点且可见，但计算出的点击点未满足门禁；隐私过滤后的崩溃摘要未报告致命 Java 异常。随后修正 WebView 视觉视口与原生可见矩形之间的坐标换算，没有重放状态不确定的指针动作或放宽门禁。最终候选 `106fe36fdd22648821003dbb48466b7bb5ac1c8c` 的[服务 CI 38725401914](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38725401914)五项通过，[Android CI 38725402055](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38725402055)固定三轮模拟器验收全部通过。
+
+[PR #27](https://github.com/TolkmisLK/Mutual_transfer/pull/27) 补齐随包文档链接并加上解压包检查。发布源码提交 `6a6a535fd459946969ed247d971e40b89202c671` 的 [main 服务 CI 38728276711](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38728276711) 五项通过；Windows 打包进程报告核验了 42 个清单文件、15 份 Markdown 和 77 处相对链接。[main Android CI 38728276712](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38728276712) 的固定三轮模拟器验收全部通过。[windows-v0.1.0-preview.1 发布工作流 38729300825](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38729300825) 公开了[预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/windows-v0.1.0-preview.1)，仅包含一个 Windows ZIP 与一个 `.sha256` 文件。113 字节校验文件自身的 SHA-256 与 GitHub 资产摘要一致；其中列出的 ZIP SHA-256 `158f223ee9d61727e0472d908a7e986ce543f23b64353e64d9b2ecb90849d792` 也与 GitHub ZIP 资产摘要一致。本次发布复核未下载或运行大 ZIP。
+
+本地未运行 Android、ADB、模拟器或实体设备验收。CI 模拟器通过不等于真实手机、真实局域网或消费者全新电脑验收；本次点击坐标修正也没有定位此前偶发 `IllegalStateException` 的根因。
+
 ## Android 排队保存清理 — 2026-09-19（Asia/Shanghai）
 
 PR #16 候选 `68da3dd9349fb1ab6335caccb8b18afdd9fa03f5` 通过了 [Android CI 35381670016](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35381670016) 和全部五项[服务 CI 35381669970](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/35381669970)。新增的受控 JVM 回归使用真实 Executor：保持首个任务运行、第二个任务排队，令两者失效并关闭两次，拒绝新任务，断言两条已接收的清理路径各执行恰好一次且不会启动另一项传输。Activity 销毁时现会排空队列，而非丢弃已经接收且拥有新建文档的任务。既有 Lint/构建、Debug 与 Acceptance 模拟器场景均通过。产物 `10562586858` 已下载，成功的队列回归报告已审查；没有本地 Java/Android 执行结论。
