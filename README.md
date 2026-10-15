@@ -10,7 +10,7 @@ Windows 便携服务公开预览包：[windows-v0.1.0-preview.1](https://github.
 
 Windows 免安装服务包已通过 CI 中真实打包进程的上传、正常停止、重启续传和下载校验，包含固定版本 Node 运行时、双击启动入口和独立用户数据目录；它使用浏览器界面，不是原生桌面客户端，尚未完成消费者干净机验收。下载构建产物和具体边界见 [Windows portable 说明](docs/WINDOWS-PORTABLE.md)。
 
-Windows 服务包从[固定的预览版 Release](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/windows-v0.1.0-preview.1)下载 ZIP 与 `.sha256` 并先比对摘要；[服务 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38728276711)记录了打包运行验收。Android APK 仍从[客户端构建记录](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml)中选取目标提交成功的 `main` Artifact，**不包含在 Windows Release 中**。两者均非稳定版；Android 客户端仍需要一台运行服务的电脑。安装和校验步骤见[首次使用教程](docs/QUICKSTART.md)与[Android 说明](docs/ANDROID.md)。
+Windows 服务包从[固定的预览版 Release](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/windows-v0.1.0-preview.1)下载 ZIP 与 `.sha256` 并先比对摘要；[服务 CI](https://github.com/TolkmisLK/Mutual_transfer/actions/runs/38728276711)记录了打包运行验收。Android APK 有[独立公开的 android-v0.1.1-preview 预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/android-v0.1.1-preview)，**不包含在本轮 Windows Release 中，也未随本轮更新**；需要与更新源码提交对应的候选构建时，再从成功的 [Android main CI](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml) 获取 Artifact。两者均非稳定版；Android 客户端仍需要一台运行服务的电脑。安装和校验步骤见[首次使用教程](docs/QUICKSTART.md)与[Android 说明](docs/ANDROID.md)。
 
 客户端提供「安装到手机或电脑」说明与浏览器安装入口，需使用受信任的 HTTPS。断网时只显示重连指南，不离线缓存文件或登录信息；重新连接、重新选择原文件可以续传。这是可安装网页，不是原生手机安装包，实际手机安装和后台传输仍需验收。见 [安装与离线边界](docs/INSTALLABLE-WEB.md)。
 

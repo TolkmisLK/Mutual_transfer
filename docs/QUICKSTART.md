@@ -4,7 +4,7 @@ Mutual Transfer 把文件暂存在运行服务的电脑上。加入同一文件�
 
 ## 1. 在电脑上启动服务
 
-Windows 免安装包从[公开的 windows-v0.1.0-preview.1 预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/windows-v0.1.0-preview.1)获取：同时下载服务 ZIP 和 `.sha256`，用 PowerShell 的 `Get-FileHash path-to.zip -Algorithm SHA256` 核对摘要后，解压完整文件夹并双击 `START-WINDOWS.cmd`。保持弹出的终端窗口打开。包的获取方式、校验和数据目录见 [Windows 免安装包说明](WINDOWS-PORTABLE.md)。这是 Windows 服务预览包，没有稳定版安装包，也不含 Android APK。
+Windows 免安装包从[公开的 windows-v0.1.0-preview.1 预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/windows-v0.1.0-preview.1)获取：同时下载服务 ZIP 和 `.sha256`，用 PowerShell 的 `Get-FileHash path-to.zip -Algorithm SHA256` 核对摘要后，解压完整文件夹并双击 `START-WINDOWS.cmd`。保持弹出的终端窗口打开。包的获取方式、校验和数据目录见 [Windows 免安装包说明](WINDOWS-PORTABLE.md)。这是 Windows 服务预览包，没有稳定版安装包，也不含 Android APK；Android 有[独立预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/android-v0.1.1-preview)。
 
 从源码运行时，先安装 Node.js 22 或更新版本，然后在项目目录执行：
 

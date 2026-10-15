@@ -2,11 +2,13 @@
 
 [中文使用步骤](#zh-steps) · [中文实现与验收边界](#zh)
 
+Public preview APK and checksum: [android-v0.1.1-preview](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/android-v0.1.1-preview). The newer Windows server preview does not update this APK. For a candidate APK matching a newer source commit, use a successful [Android main CI](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml) artifact and verify its separate checksum.
+
 <a id="zh-steps"></a>
 
 Android 预览版 `0.1.1-preview` 的使用步骤：
 
-1. 打开 [Android 预览工作流](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml)，选择与目标源码提交一致且成功的 `main` 运行，在页面底部下载 `mutual-transfer-android-debug-preview` Artifact（保留期内）。解开 Artifact 容器，从中取 `app-debug.apk` 和对应 `.sha256`，先在电脑上核对 APK 的 SHA-256，再在 Android 8.0 或更新设备上安装预览 APK，并确认系统 WebView 已更新。此 Debug APK 使用临时 CI 签名，后续构建可能需要先卸载旧版；卸载前自行保留需要的数据。
+1. 从[公开的 android-v0.1.1-preview 预览版](https://github.com/TolkmisLK/Mutual_transfer/releases/tag/android-v0.1.1-preview)下载 APK 与 `.sha256`，先在电脑上核对 SHA-256，再在 Android 8.0 或更新设备上安装并确认系统 WebView 已更新。本轮 Windows 服务预览版没有更新此 APK。如需与更新源码提交对应的候选构建，打开 [Android 预览工作流](https://github.com/TolkmisLK/Mutual_transfer/actions/workflows/android.yml)，选择该提交成功的 `main` 运行，下载 `mutual-transfer-android-debug-preview` Artifact，解出 `app-debug.apk` 与其 `.sha256` 单独校验。CI Debug APK 使用临时签名，后续构建可能需要先卸载旧版；卸载前自行保留需要的数据。
 2. 在另一台设备启动 Mutual Transfer HTTPS 服务，确保手机信任其证书，且地址中的主机名与证书一致。
 3. 在应用顶部输入服务地址（如 `https://files.example.test:8787`），点击「连接」，再用共享密钥或配对码登录。
 4. 上传时点击页面的文件选择按钮，通过系统文件选择器选取文件，等待显示校验完成。
