@@ -174,6 +174,139 @@ test('interrupted network resumes the same content without duplicating the trans
   expect(after).toHaveLength(1); expect(after[0].id).toBe(before.id);
   expect(after[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
 });
+test('an unreadable resume checkpoint never creates a duplicate upload', async ({ page }, info) => {
+  const name = `checkpoint-${info.project.name}.bin`; const bytes = Buffer.from('keep this checkpoint');
+  await page.route('**/chunk', route => route.abort('failed'));
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('#status')).toContainText('传输已停止');
+  const original = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.find(file => file.name === name), name);
+  expect(original.offset).toBe(0);
+  await page.unroute('**/chunk');
+  await page.route('**/api/transfers/*', route => route.request().method() === 'GET' ? route.abort('failed') : route.continue());
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('#status')).toContainText('无法连接文件空间');
+  const pending = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(pending).toHaveLength(1); expect(pending[0].id).toBe(original.id);
+  await page.unroute('**/api/transfers/*');
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+  const complete = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(complete).toHaveLength(1); expect(complete[0].id).toBe(original.id);
+});
+test('checksum failure removes only this corrupt upload and a new selection succeeds', async ({ page }, info) => {
+  const name = `corrupt-${info.project.name}.bin`; const bytes = Buffer.from('source bytes remain unchanged');
+  let changed = false; let corruptId;
+  await page.route('**/chunk', route => {
+    if (changed) return route.continue();
+    changed = true;
+    const bad = Buffer.from(route.request().postDataBuffer()); bad[0] ^= 1;
+    return route.continue({ postData: bad, headers: { ...route.request().headers(), 'upload-checksum': createHash('sha256').update(bad).digest('hex') } });
+  });
+  await page.route('**/finish', async route => {
+    corruptId ||= route.request().url().split('/').at(-2);
+    await route.continue();
+  });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('#status')).toContainText('已删除本次未完成上传');
+  expect(changed).toBe(true); expect(corruptId).toBeTruthy();
+  expect((await page.evaluate(async () => (await (await fetch('/api/transfers')).json()).files)).find(file => file.id === corruptId)).toBeUndefined();
+  await page.unroute('**/chunk');
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].id).not.toBe(corruptId);
+  expect(files[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+});
+test('checksum failure with failed deletion retains the record for manual recovery', async ({ page }, info) => {
+  const name = `corrupt-retained-${info.project.name}.bin`; const bytes = Buffer.from('original source');
+  await page.route('**/chunk', route => {
+    const bad = Buffer.from(route.request().postDataBuffer()); bad[0] ^= 1;
+    return route.continue({ postData: bad, headers: { ...route.request().headers(), 'upload-checksum': createHash('sha256').update(bad).digest('hex') } });
+  });
+  await page.route('**/api/transfers/*', route => route.request().method() === 'DELETE' ? route.abort('failed') : route.continue());
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('#status')).toContainText('清理未确认');
+  await expect(page.locator('#status')).not.toContainText('已删除本次未完成上传');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].complete).toBe(false); expect(files[0].offset).toBe(bytes.length);
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('待续传');
+});
+test('cancel waits for the current chunk and removes its incomplete transfer', async ({ page }, info) => {
+  const name = `cancel-${info.project.name}.bin`; const bytes = Buffer.alloc(5 * 1024 * 1024, 19);
+  let release, reached;
+  const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => {
+    const response = await route.fetch(); reached();
+    await new Promise(resolve => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await held;
+  const before = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.find(file => file.name === name), name);
+  expect(before.offset).toBe(4 * 1024 * 1024);
+  await page.getByRole('button', { name: '取消并删除未完成上传' }).click();
+  release();
+  await expect(page.locator('#status')).toContainText('已取消并删除当前未完成上传');
+  expect((await page.evaluate(async () => (await (await fetch('/api/transfers')).json()).files)).find(file => file.id === before.id)).toBeUndefined();
+  expect(await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith('mutual-transfer:v2:')))).toEqual([]);
+});
+test('pause does not conceal a simultaneous network failure', async ({ page }, info) => {
+  const name = `pause-failure-${info.project.name}.bin`; const bytes = Buffer.from('retry after network failure');
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => { reached(); await new Promise(resolve => { release = resolve; }); await route.abort('failed'); });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes }); await held;
+  await page.getByRole('button', { name: '暂停', exact: true }).click(); release();
+  await expect(page.locator('#status')).toContainText('传输已停止：无法连接文件空间');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].offset).toBe(0);
+});
+test('blocked deletion keeps the incomplete transfer visible and does not claim cancellation succeeded', async ({ page }, info) => {
+  const name = `retained-${info.project.name}.bin`; const bytes = Buffer.alloc(5 * 1024 * 1024, 23);
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => { const response = await route.fetch(); reached(); await new Promise(resolve => { release = resolve; }); await route.fulfill({ response }); });
+  await page.route('**/api/transfers/*', route => route.request().method() === 'DELETE' ? route.abort('failed') : route.continue());
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes }); await held;
+  await page.getByRole('button', { name: '取消并删除未完成上传' }).click(); release();
+  await expect(page.locator('#status')).toContainText('取消未确认');
+  await expect(page.locator('#status')).not.toContainText('已取消并删除');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].complete).toBe(false);
+  await page.unroute('**/api/transfers/*');
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('.file').filter({ hasText: name }).getByRole('button', { name: '删除' }).click();
+  await expect(page.locator('.file').filter({ hasText: name })).toHaveCount(0);
+});
+test('unavailable browser storage does not stop a live upload', async ({ page }, info) => {
+  await page.evaluate(() => { for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new DOMException('blocked', 'SecurityError'); }; });
+  const name = `restricted-${info.project.name}.txt`; const bytes = Buffer.from('current page can finish');
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => { reached(); await new Promise(resolve => { release = resolve; }); await route.continue(); });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'text/plain', buffer: bytes });
+  await held; await expect(page.locator('#status')).toContainText('刷新页面后无法自动续传');
+  release();
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+});
+test('storage-restricted upload resumes the same server record within the open page', async ({ page }, info) => {
+  await page.evaluate(() => { for (const method of ['getItem', 'setItem', 'removeItem']) Storage.prototype[method] = () => { throw new DOMException('blocked', 'SecurityError'); }; });
+  const name = `restricted-resume-${info.project.name}.bin`; const bytes = Buffer.alloc(4 * 1024 * 1024 + 37, 17);
+  let release, reached; const held = new Promise(resolve => { reached = resolve; });
+  await page.route('**/chunk', async route => {
+    const response = await route.fetch(); reached();
+    await new Promise(resolve => { release = resolve; });
+    await route.fulfill({ response });
+  });
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes }); await held;
+  const original = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.find(file => file.name === name), name);
+  expect(original.offset).toBe(4 * 1024 * 1024);
+  await page.getByRole('button', { name: '暂停', exact: true }).click(); release();
+  await expect(page.locator('#status')).toContainText('刷新后无法自动续传');
+  await page.unroute('**/chunk');
+  await page.locator('#files').setInputFiles({ name, mimeType: 'application/octet-stream', buffer: bytes });
+  await expect(page.locator('.file').filter({ hasText: name })).toContainText('已校验完成');
+  const files = await page.evaluate(async name => (await (await fetch('/api/transfers')).json()).files.filter(file => file.name === name), name);
+  expect(files).toHaveLength(1); expect(files[0].id).toBe(original.id);
+  expect(files[0].sha256).toBe(createHash('sha256').update(bytes).digest('hex'));
+});
 test('a separate browser pairs once, transfers a file and cannot delegate access', async ({ page, browser }, info) => {
   const guestContext = await browser.newContext({ viewport: { width: 390, height: 844 } });
   const guest = await guestContext.newPage();

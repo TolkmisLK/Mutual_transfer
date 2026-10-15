@@ -1,7 +1,7 @@
 import { sha256 } from '/vendor/sha2.js';
 import { hashFile, toHex, resumeMatches } from './integrity.js';
 const $ = id => document.getElementById(id);
-let paused = false; let uploading = false; let loggingOut = false; let pairingTimer;
+let paused = false; let cancelUpload = false; let activeUpload = null; let uploading = false; let loggingOut = false; let pairingTimer;
 let managementGeneration = 0;
 let workspaceGeneration = 0; let refreshGeneration = 0;
 function clearManagement() { managementGeneration++; $('paired-dialog').close(); $('paired-list').replaceChildren(); $('paired-error').textContent = ''; $('paired-identity').textContent = ''; }
@@ -29,6 +29,7 @@ async function api(url, options = {}) {
   const result = await response.json();
   if (!response.ok) {
     const error = new Error(messages[result.error] || result.error || `请求失败 (${response.status})`);
+    error.status = response.status; error.serverError = result.error;
     if (response.status === 401 && generation === workspaceGeneration) {
       workspaceGeneration++; refreshGeneration++;
       clearPairing(); clearManagement(); $('join').hidden = false; $('workspace').hidden = true;
@@ -39,6 +40,20 @@ async function api(url, options = {}) {
   return result;
 }
 const post = value => ({ method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value) });
+const inPageUploads = new Map();
+function savedUploadId(key) {
+  if (inPageUploads.has(key)) return inPageUploads.get(key);
+  try { const id = localStorage.getItem(key); if (id) inPageUploads.set(key, id); return id; }
+  catch { return null; }
+}
+function rememberUpload(key, id) {
+  inPageUploads.set(key, id);
+  try { localStorage.setItem(key, id); return true; } catch { return false; }
+}
+function forgetUpload(key, id) {
+  if (inPageUploads.get(key) === id) inPageUploads.delete(key);
+  try { if (localStorage.getItem(key) === id) localStorage.removeItem(key); } catch { /* Storage is optional. */ }
+}
 function button(text, action) {
   const b = document.createElement('button'); b.className = 'secondary'; b.textContent = text;
   b.onclick = async () => { b.disabled = true; try { await action(); } catch (e) { say(e.message); } finally { b.disabled = false; } }; return b;
@@ -173,8 +188,25 @@ $('logout').onclick = async () => {
 $('close').onclick = () => $('preview').close();
 $('preview').addEventListener('close', () => $('preview-body').replaceChildren());
 $('pause').onclick = () => { paused = true; say('当前文件块完成后暂停。'); };
+async function discardActiveUpload() {
+  if (!activeUpload) return '已取消；没有创建未完成上传。';
+  const { item, localKey } = activeUpload;
+  try {
+    await api(`/api/transfers/${item.id}`, { method: 'DELETE' });
+    forgetUpload(localKey, item.id); activeUpload = null;
+    return '已取消并删除当前未完成上传。';
+  } catch (error) {
+    return `取消未确认：${error.message}。请恢复连接、刷新列表并检查「${item.name}」；若仍在，请手动删除。`;
+  }
+}
+$('cancel-upload').onclick = () => {
+  cancelUpload = true; paused = true; $('cancel-upload').disabled = true;
+  say('正在停止当前文件块，随后删除当前未完成上传。');
+};
 $('files').onchange = async e => {
-  if (uploading) return; uploading = true; paused = false; $('files').disabled = true; $('pause').hidden = false; $('progress').hidden = false;
+  if (uploading) return; uploading = true; paused = false; cancelUpload = false; activeUpload = null;
+  $('files').disabled = true; $('pause').hidden = false; $('cancel-upload').hidden = false; $('cancel-upload').disabled = false; $('progress').hidden = false;
+  let failure; let resumeUnavailable = false;
   try {
     for (const file of e.target.files) {
       say('正在校验源文件，校验完成后开始传输。');
@@ -183,26 +215,55 @@ $('files').onchange = async e => {
         $('progress-label').textContent = `校验 ${file.name} · ${size(n)} / ${size(file.size)}`;
       } });
       const localKey = `mutual-transfer:v2:${file.name}:${file.size}:${digest}`;
-      let item; const cached = localStorage.getItem(localKey);
+      let item; const cached = savedUploadId(localKey);
       if (cached) {
-        try { item = await api(`/api/transfers/${cached}`); } catch (error) { if ($('workspace').hidden) throw error; }
+        try { item = await api(`/api/transfers/${cached}`); }
+        catch (error) { if (error.status !== 404) throw error; forgetUpload(localKey, cached); }
         if (!resumeMatches(item, file, digest)) item = null;
       }
-      if (!item) { item = await api('/api/transfers', post({ name: file.name, size: file.size, expectedSha256: digest })); localStorage.setItem(localKey, item.id); }
+      if (!item) {
+        if (paused) break;
+        item = await api('/api/transfers', post({ name: file.name, size: file.size, expectedSha256: digest }));
+        if (!rememberUpload(localKey, item.id)) { resumeUnavailable = true; say('此浏览器无法保存续传记录；本次仍可完成上传，刷新页面后无法自动续传。'); }
+      }
+      activeUpload = { item, localKey };
       while (item.offset < file.size && !paused) {
         const bytes = new Uint8Array(await file.slice(item.offset, item.offset + 4 * 1024 * 1024).arrayBuffer());
         item = await api(`/api/transfers/${item.id}/chunk`, { method: 'PUT', headers: { 'Upload-Offset': String(item.offset), 'Upload-Checksum': toHex(sha256(bytes)), 'Content-Type': 'application/octet-stream' }, body: bytes });
+        activeUpload.item = item;
         $('progress').value = file.size ? item.offset / file.size * 100 : 100;
         $('progress-label').textContent = `${file.name} · ${size(item.offset)} / ${size(file.size)}`;
       }
       if (paused) break;
-      say('正在核对接收文件的校验值，请稍候。'); const completed = await api(`/api/transfers/${item.id}/finish`, { method: 'POST' });
+      $('pause').hidden = true; $('cancel-upload').hidden = true;
+      say('正在核对接收文件的校验值，请稍候。');
+      let completed;
+      try { completed = await api(`/api/transfers/${item.id}/finish`, { method: 'POST' }); }
+      catch (error) {
+        if (error.status !== 422 || error.serverError !== 'File checksum mismatch; delete this transfer and upload the original file again') throw error;
+        let removalError;
+        try { await api(`/api/transfers/${item.id}`, { method: 'DELETE' }); }
+        catch (failure) { removalError = failure; }
+        if (removalError) throw new Error(`接收端完整性校验失败，清理未确认：${removalError.message}。请刷新列表，手动删除「${item.name}」后重新选择原文件。`);
+        forgetUpload(localKey, item.id); activeUpload = null;
+        throw new Error('接收端完整性校验失败，已删除本次未完成上传；请重新选择原文件重传。');
+      }
       if (completed.sha256 !== digest || !completed.integrityVerified) throw new Error('接收端未通过完整性校验，请保留原文件并重新传输。');
-      localStorage.removeItem(localKey); say(`${file.name} 已上传并通过校验。`);
+      forgetUpload(localKey, item.id); activeUpload = null; say(`${file.name} 已上传并通过校验。`);
+      if (!paused) { $('pause').hidden = false; $('cancel-upload').hidden = false; }
     }
-    await refresh(); if (paused) say('已暂停。重新选择原文件可继续。');
-  } catch (error) { say(`传输已停止：${error.message}。重新选择原文件可续传。`); }
-  finally { uploading = false; $('files').disabled = false; $('files').value = ''; $('pause').hidden = true; }
+  } catch (error) { failure = error; }
+  try {
+    $('pause').hidden = true; $('cancel-upload').hidden = true;
+    const cancelledMessage = cancelUpload ? await discardActiveUpload() : null;
+    try { await refresh(); } catch (error) { if (!failure && !cancelledMessage) failure = error; }
+    if (cancelledMessage) say(cancelledMessage);
+    else if (failure && !(paused && failure.message === '校验已暂停，未发送文件。')) say(`传输已停止：${failure.message}` + (resumeUnavailable ? ' 此浏览器未保存续传记录，刷新后无法自动续传。' : ''));
+    else if (paused) say('已暂停。' + (resumeUnavailable ? '此浏览器未保存续传记录，刷新后无法自动续传；请保持页面打开。' : '重新选择原文件可继续。'));
+  } finally {
+    activeUpload = null; uploading = false; $('files').disabled = false; $('files').value = '';
+    $('pause').hidden = true; $('cancel-upload').hidden = true;
+  }
 };
 window.addEventListener('beforeunload', e => { if (uploading) { e.preventDefault(); e.returnValue = ''; } });
 refresh().catch(() => { $('join').hidden = false; });
